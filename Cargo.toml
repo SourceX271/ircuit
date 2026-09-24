@@ -63,6 +63,10 @@ tokio-rustls = { version = "0.26.5", default-features = false, features = [
 webpki-roots = "1.0.9"
 base64 = "0.23.1"
 
+# SQLite，bundled：SQLite 随二进制一起编译，不依赖目标机器上装了什么，
+# 也才能保证 FTS5 一定可用（发行版自带的 SQLite 常常没编 FTS5）。
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+
 # ---- Lint 基线：全工作区统一 ----
 [workspace.lints.rust]
 unsafe_code = "forbid"
