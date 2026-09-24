@@ -27,8 +27,12 @@ export const commands = {
 	listChannels: (networkId: string) => typedError<ChannelSnapshot[], string>(__TAURI_INVOKE("list_channels", { networkId })),
 	/**  Send a message to a channel or user. */
 	sendMessage: (networkId: string, target: string, text: string) => typedError<null, string>(__TAURI_INVOKE("send_message", { networkId, target, text })),
+	/**  Send a notice, which by convention must never trigger an automatic reply. */
+	sendNotice: (networkId: string, target: string, text: string) => typedError<null, string>(__TAURI_INVOKE("send_notice", { networkId, target, text })),
 	/**  Join a channel. */
 	joinChannel: (networkId: string, channel: string) => typedError<null, string>(__TAURI_INVOKE("join_channel", { networkId, channel })),
+	/**  Leave a channel, optionally saying why. */
+	partChannel: (networkId: string, channel: string, reason: string | null) => typedError<null, string>(__TAURI_INVOKE("part_channel", { networkId, channel, reason })),
 	/**  Send a raw protocol line, for the command console. */
 	sendRawCommand: (networkId: string, line: string) => typedError<null, string>(__TAURI_INVOKE("send_raw_command", { networkId, line })),
 	/**
@@ -41,18 +45,29 @@ export const commands = {
 	openExternal: (url: string) => typedError<null, string>(__TAURI_INVOKE("open_external", { url })),
 	/**  Ask the server about a nickname. */
 	whois: (networkId: string, nick: string) => typedError<null, string>(__TAURI_INVOKE("whois", { networkId, nick })),
-	/**  Grant or revoke a channel privilege, e.g. `+o` / `-v`. */
-	setMemberMode: (networkId: string, channel: string, nick: string, mode: string, grant: boolean) => typedError<null, string>(__TAURI_INVOKE("set_member_mode", { networkId, channel, nick, mode, grant })),
+	/**
+	 *  Grant or revoke a channel privilege, e.g. `+o` / `-v`.
+	 * 
+	 *  One general entry point rather than a command per verb: `op`, `voice`,
+	 *  `ban` and the rest differ only in which mode letter and arguments they
+	 *  assemble, and that assembly is cheap to do once in the frontend. Keeping the
+	 *  wiring here general means adding `/deop` never touches Rust.
+	 */
+	setMode: (networkId: string, target: string, modes: string, args: string[]) => typedError<null, string>(__TAURI_INVOKE("set_mode", { networkId, target, modes, args })),
+	/**  Change the nickname this connection uses. */
+	setNick: (networkId: string, nick: string) => typedError<null, string>(__TAURI_INVOKE("set_nick", { networkId, nick })),
+	/**
+	 *  Read, set or clear a channel topic.
+	 * 
+	 *  `topic: None` asks for the current topic; `Some("")` clears it.
+	 */
+	setTopic: (networkId: string, channel: string, topic: string | null) => typedError<null, string>(__TAURI_INVOKE("set_topic", { networkId, channel, topic })),
+	/**  Set or clear our away status. */
+	setAway: (networkId: string, message: string | null) => typedError<null, string>(__TAURI_INVOKE("set_away", { networkId, message })),
+	/**  Invite someone to a channel. */
+	inviteUser: (networkId: string, nick: string, channel: string) => typedError<null, string>(__TAURI_INVOKE("invite_user", { networkId, nick, channel })),
 	/**  Remove someone from a channel. */
 	kickUser: (networkId: string, channel: string, nick: string, reason: string | null) => typedError<null, string>(__TAURI_INVOKE("kick_user", { networkId, channel, nick, reason })),
-	/**
-	 *  Ban someone from a channel.
-	 * 
-	 *  The mask bans the nickname on any user and host. A tighter ban needs the
-	 *  user's host, which means a `WHOIS` round trip — offered later, not guessed at
-	 *  here.
-	 */
-	banUser: (networkId: string, channel: string, nick: string) => typedError<null, string>(__TAURI_INVOKE("ban_user", { networkId, channel, nick })),
 };
 
 /** Events */

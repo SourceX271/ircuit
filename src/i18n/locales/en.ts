@@ -91,14 +91,68 @@ export const en: TranslationSchema = {
 
   composer: {
     placeholder: 'Send a message… (Enter to send, Shift + Enter for a new line)',
+    placeholderMultiline: 'Send a message… (Ctrl + Enter to send)',
     offlinePlaceholder: 'Not connected to any network',
     send: 'Send',
     format: 'Formatting',
     emoji: 'Emoji',
     attach: 'Attach',
-    commandHint: 'Commands: /join /msg /me /raw',
+    suggestions: 'Matching commands',
+    commandHint: 'Tab completes · ↑ history · /help for commands',
+    ignoredCount: '{{count}} ignored',
     unknownCommand: 'Unknown command: /{{command}}',
     actionNeedsTarget: '/me needs a channel or a conversation',
+
+    errors: {
+      needsChannel: 'This command needs a channel',
+    },
+
+    ignore: {
+      applied: 'Ignoring {{nick}}',
+      removed: 'No longer ignoring {{nick}}',
+    },
+
+    set: {
+      applied: 'Set {{option}}',
+      usage: '/set sendOnEnter <on|off>',
+      unknownOption: 'Unknown option: {{option}}',
+    },
+
+    help: {
+      all: 'Commands: {{commands}}',
+      usage: '{{usage}} — {{description}}',
+      unknown: 'Unknown command: /{{command}}',
+    },
+
+    commands: {
+      me: 'Send an action',
+      msg: 'Open a conversation or send privately',
+      notice: 'Send a notice (never triggers a reply)',
+      join: 'Join a channel',
+      part: 'Leave a channel',
+      topic: 'Show, set or clear the channel topic',
+      nick: 'Change your nickname',
+      away: 'Set or clear your away message',
+      mode: 'Set channel or user modes',
+      op: 'Give channel operator status',
+      deop: 'Remove channel operator status',
+      voice: 'Give voice',
+      devoice: 'Remove voice',
+      ban: 'Ban a nickname',
+      unban: 'Lift a ban',
+      kick: 'Remove someone from the channel',
+      invite: 'Invite someone to a channel',
+      whois: 'Look up a nickname',
+      ignore: 'Hide everything someone says',
+      unignore: 'Stop hiding someone',
+      ctcp: 'Send a CTCP request',
+      raw: 'Send a raw protocol line',
+      clear: 'Clear this buffer',
+      close: 'Close this buffer',
+      quit: 'Disconnect from the network',
+      set: 'Change a client option',
+      help: 'Show command help',
+    },
   },
 
   status: {

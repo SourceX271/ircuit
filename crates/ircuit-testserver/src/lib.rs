@@ -79,6 +79,10 @@ struct Shared {
     nick: Option<String>,
     /// Authentication result, once SASL has run.
     authenticated: Option<bool>,
+    /// Channel topics, so a `TOPIC` query can answer with what was set.
+    topics: Vec<(String, String)>,
+    /// The client's away message, if it set one.
+    away: Option<String>,
 }
 
 struct Inner {
@@ -179,6 +183,23 @@ impl TestServer {
         self.inner.shared.lock().await.authenticated
     }
 
+    /// The topic currently set on a channel, if any.
+    pub async fn topic(&self, channel: &str) -> Option<String> {
+        self.inner
+            .shared
+            .lock()
+            .await
+            .topics
+            .iter()
+            .find(|(known, _)| known == channel)
+            .map(|(_, topic)| topic.clone())
+    }
+
+    /// The away message the client set, if it is away.
+    pub async fn away(&self) -> Option<String> {
+        self.inner.shared.lock().await.away.clone()
+    }
+
     /// Wait until a received line satisfies `predicate`.
     ///
     /// Returns `None` on timeout, so a failing test reports a timeout rather
@@ -255,9 +276,16 @@ async fn serve(stream: TcpStream, config: ServerConfig, inner: Arc<Inner>) -> st
                 if let Some(result) = session.authenticated {
                     inner.shared.lock().await.authenticated = Some(result);
                 }
-                if !session.channels.is_empty() {
+                {
+                    // Synced unconditionally: a PART, a cleared topic and an
+                    // AWAY reset all make the session *less* populated, and an
+                    // "only if non-empty" guard would keep the stale value
+                    // forever, which is exactly the bug this mock exists to
+                    // expose rather than hide.
                     let mut shared = inner.shared.lock().await;
                     shared.channels = session.channels.clone();
+                    shared.topics = session.topics.clone();
+                    shared.away = session.away.clone();
                 }
 
                 if session.should_close {
@@ -282,6 +310,9 @@ struct ServerSession {
     cap_negotiating: bool,
     authenticated: Option<bool>,
     channels: Vec<String>,
+    /// `(channel, topic)` in the order they were set.
+    topics: Vec<(String, String)>,
+    away: Option<String>,
     should_close: bool,
     rejected_a_nick: bool,
 }
@@ -295,6 +326,8 @@ impl ServerSession {
             cap_negotiating: false,
             authenticated: None,
             channels: Vec::new(),
+            topics: Vec::new(),
+            away: None,
             should_close: false,
             rejected_a_nick: false,
         }
@@ -328,7 +361,14 @@ impl ServerSession {
                 vec![format!(":{SERVER_NAME} PONG {SERVER_NAME} :{token}")]
             }
             "JOIN" => self.on_join(rest.trim()),
+            "PART" => self.on_part(rest),
             "PRIVMSG" => self.on_privmsg(rest),
+            "NOTICE" => self.on_notice(rest),
+            "TOPIC" => self.on_topic(rest),
+            "AWAY" => self.on_away(rest),
+            "INVITE" => self.on_invite(rest),
+            "MODE" => self.on_mode(rest),
+            "KICK" => self.on_kick(rest),
             "QUIT" => {
                 self.should_close = true;
                 Vec::new()
@@ -473,6 +513,131 @@ impl ServerSession {
         let nick = self.nick.clone().unwrap_or_else(|| "*".to_owned());
 
         vec![format!(":{nick}!user@host PRIVMSG {target} :{text}")]
+    }
+
+    /// Echo a NOTICE back, the same way `echo-message` treats a PRIVMSG.
+    fn on_notice(&mut self, rest: &str) -> Vec<String> {
+        let (target, text) = match rest.split_once(' ') {
+            Some((target, text)) => (target, text.trim_start_matches(':')),
+            None => return Vec::new(),
+        };
+
+        let nick = self.nick.clone().unwrap_or_else(|| "*".to_owned());
+
+        vec![format!(":{nick}!user@host NOTICE {target} :{text}")]
+    }
+
+    /// Leave a channel, echoing the PART back to the departing client.
+    fn on_part(&mut self, rest: &str) -> Vec<String> {
+        let (channel, reason) = match rest.split_once(' ') {
+            Some((channel, reason)) => (channel, Some(reason.trim_start_matches(':'))),
+            None => (rest.trim(), None),
+        };
+
+        if channel.is_empty() {
+            return Vec::new();
+        }
+
+        self.channels.retain(|joined| joined != channel);
+
+        let nick = self.nick.clone().unwrap_or_else(|| "*".to_owned());
+        let suffix = match reason {
+            Some(reason) if !reason.is_empty() => format!(" :{reason}"),
+            _ => String::new(),
+        };
+
+        vec![format!(":{nick}!user@host PART {channel}{suffix}")]
+    }
+
+    /// Answer a topic query, or record and broadcast a change.
+    ///
+    /// The two requests differ only by the presence of a parameter, which is
+    /// exactly the distinction the client has to get right.
+    fn on_topic(&mut self, rest: &str) -> Vec<String> {
+        let nick = self.nick.clone().unwrap_or_else(|| "*".to_owned());
+
+        let (channel, topic) = match rest.split_once(' ') {
+            Some((channel, topic)) => (channel, Some(topic.trim_start_matches(':'))),
+            None => (rest.trim(), None),
+        };
+
+        if channel.is_empty() {
+            return Vec::new();
+        }
+
+        let Some(topic) = topic else {
+            // A bare TOPIC asks what the topic is.
+            return match self
+                .topics
+                .iter()
+                .find(|(known, _)| known == channel)
+                .map(|(_, topic)| topic.clone())
+            {
+                Some(topic) => vec![format!(":{SERVER_NAME} 332 {nick} {channel} :{topic}")],
+                None => vec![format!(
+                    ":{SERVER_NAME} 331 {nick} {channel} :No topic is set"
+                )],
+            };
+        };
+
+        // An empty topic clears it rather than setting an empty one.
+        self.topics.retain(|(known, _)| known != channel);
+        if !topic.is_empty() {
+            self.topics.push((channel.to_owned(), topic.to_owned()));
+        }
+
+        vec![format!(":{nick}!user@host TOPIC {channel} :{topic}")]
+    }
+
+    /// Set or clear the away message.
+    fn on_away(&mut self, rest: &str) -> Vec<String> {
+        let nick = self.nick.clone().unwrap_or_else(|| "*".to_owned());
+        let message = rest.trim().trim_start_matches(':');
+
+        if message.is_empty() {
+            self.away = None;
+            return vec![format!(
+                ":{SERVER_NAME} 305 {nick} :You are no longer marked as being away"
+            )];
+        }
+
+        self.away = Some(message.to_owned());
+        vec![format!(
+            ":{SERVER_NAME} 306 {nick} :You have been marked as being away"
+        )]
+    }
+
+    /// Acknowledge an invitation with `341`, which names both parties.
+    fn on_invite(&mut self, rest: &str) -> Vec<String> {
+        let Some((target, channel)) = rest.split_once(' ') else {
+            return Vec::new();
+        };
+
+        let nick = self.nick.clone().unwrap_or_else(|| "*".to_owned());
+
+        vec![format!(":{SERVER_NAME} 341 {nick} {target} {channel}")]
+    }
+
+    /// Echo a mode change back as coming from the client.
+    fn on_mode(&mut self, rest: &str) -> Vec<String> {
+        if rest.trim().is_empty() {
+            return Vec::new();
+        }
+
+        let nick = self.nick.clone().unwrap_or_else(|| "*".to_owned());
+
+        vec![format!(":{nick}!user@host MODE {rest}")]
+    }
+
+    /// Echo a KICK back, addressed to the channel.
+    fn on_kick(&mut self, rest: &str) -> Vec<String> {
+        if rest.trim().is_empty() {
+            return Vec::new();
+        }
+
+        let nick = self.nick.clone().unwrap_or_else(|| "*".to_owned());
+
+        vec![format!(":{nick}!user@host KICK {rest}")]
     }
 
     fn maybe_register(&mut self) -> Vec<String> {

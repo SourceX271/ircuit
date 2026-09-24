@@ -62,6 +62,24 @@ pub enum ClientCommand {
     },
     /// Ask the server about someone.
     Whois(String),
+    /// Read, set or clear a channel topic.
+    ///
+    /// `None` asks the server for the current topic, `Some("")` clears it. Those
+    /// are different requests on the wire (`TOPIC #c` versus `TOPIC #c :`), so
+    /// the distinction has to survive this far.
+    Topic {
+        channel: String,
+        topic: Option<String>,
+    },
+    /// Set an away message, or clear it with `None`.
+    Away {
+        message: Option<String>,
+    },
+    /// Invite someone to a channel.
+    Invite {
+        nick: String,
+        channel: String,
+    },
     /// Send a raw protocol line. Intended for the command console.
     Raw(String),
     /// Close the connection and do not reconnect.
@@ -498,6 +516,21 @@ pub fn command_to_lines(command: &ClientCommand) -> Vec<String> {
             vec![Message::new(Command::Kick, params).to_wire()]
         }
         ClientCommand::Whois(nick) => vec![Message::new(Command::Whois, [nick.clone()]).to_wire()],
+        ClientCommand::Topic { channel, topic } => {
+            let params = match topic {
+                Some(topic) => vec![channel.clone(), topic.clone()],
+                None => vec![channel.clone()],
+            };
+
+            vec![Message::new(Command::Topic, params).to_wire()]
+        }
+        ClientCommand::Away { message } => {
+            let params: Vec<String> = message.iter().cloned().collect();
+            vec![Message::new(Command::Away, params).to_wire()]
+        }
+        ClientCommand::Invite { nick, channel } => {
+            vec![Message::new(Command::Invite, [nick.clone(), channel.clone()]).to_wire()]
+        }
         ClientCommand::Raw(line) => {
             // Strip framing characters so a raw line cannot become two commands.
             let cleaned: String = line.chars().filter(|c| *c != '\r' && *c != '\n').collect();
@@ -631,6 +664,78 @@ mod tests {
         assert_eq!(
             command_to_lines(&ClientCommand::Whois("alice".to_owned())),
             vec!["WHOIS alice"]
+        );
+    }
+
+    #[test]
+    fn topic_query_set_and_clear_are_three_different_lines() {
+        let query = command_to_lines(&ClientCommand::Topic {
+            channel: "#rust".to_owned(),
+            topic: None,
+        });
+        assert_eq!(query, vec!["TOPIC #rust"]);
+
+        let set = command_to_lines(&ClientCommand::Topic {
+            channel: "#rust".to_owned(),
+            topic: Some("hello world".to_owned()),
+        });
+        assert_eq!(set, vec!["TOPIC #rust :hello world"]);
+
+        // Clearing sends an empty trailing parameter, which is *not* the same
+        // request as asking for the current topic.
+        let clear = command_to_lines(&ClientCommand::Topic {
+            channel: "#rust".to_owned(),
+            topic: Some(String::new()),
+        });
+        assert_eq!(clear, vec!["TOPIC #rust :"]);
+    }
+
+    #[test]
+    fn a_topic_cannot_inject_a_command() {
+        let lines = command_to_lines(&ClientCommand::Topic {
+            channel: "#rust".to_owned(),
+            topic: Some("hi\r\nJOIN #evil".to_owned()),
+        });
+
+        assert_eq!(lines.len(), 1);
+        assert!(!lines[0].contains('\r'));
+        assert!(!lines[0].contains('\n'));
+    }
+
+    #[test]
+    fn away_sets_and_clears() {
+        // A one-word message needs no colon sigil, exactly like KICK's reason;
+        // the wire form stays minimal and servers treat the two as equivalent.
+        assert_eq!(
+            command_to_lines(&ClientCommand::Away {
+                message: Some("lunch".to_owned()),
+            }),
+            vec!["AWAY lunch"]
+        );
+
+        // A message with spaces does need it, or it would look like two params.
+        assert_eq!(
+            command_to_lines(&ClientCommand::Away {
+                message: Some("out to lunch".to_owned()),
+            }),
+            vec!["AWAY :out to lunch"]
+        );
+
+        // Clearing sends the bare command.
+        assert_eq!(
+            command_to_lines(&ClientCommand::Away { message: None }),
+            vec!["AWAY"]
+        );
+    }
+
+    #[test]
+    fn invite_names_both_parties() {
+        assert_eq!(
+            command_to_lines(&ClientCommand::Invite {
+                nick: "alice".to_owned(),
+                channel: "#rust".to_owned(),
+            }),
+            vec!["INVITE alice #rust"]
         );
     }
 

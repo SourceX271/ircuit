@@ -103,9 +103,52 @@ export async function sendMessage(networkId: string, target: string, text: strin
   await unwrap(commands.sendMessage(networkId, target, text));
 }
 
+/** 发送 NOTICE。按惯例 NOTICE 不得触发自动回复。 */
+export async function sendNotice(networkId: string, target: string, text: string): Promise<void> {
+  await unwrap(commands.sendNotice(networkId, target, text));
+}
+
 /** 加入频道。 */
 export async function joinChannel(networkId: string, channel: string): Promise<void> {
   await unwrap(commands.joinChannel(networkId, channel));
+}
+
+/** 离开频道，可附原因。 */
+export async function partChannel(
+  networkId: string,
+  channel: string,
+  reason: string | null,
+): Promise<void> {
+  await unwrap(commands.partChannel(networkId, channel, reason));
+}
+
+/** 切换昵称。 */
+export async function setNick(networkId: string, nick: string): Promise<void> {
+  await unwrap(commands.setNick(networkId, nick));
+}
+
+/**
+ * 读取 / 设置 / 清除频道主题。
+ *
+ * `null` 表示查询当前主题，空字符串表示清除——两者在有线协议上是不同的
+ * 请求，因此不能让 `undefined` 顺手代表其中一种。
+ */
+export async function setTopic(
+  networkId: string,
+  channel: string,
+  topic: string | null,
+): Promise<void> {
+  await unwrap(commands.setTopic(networkId, channel, topic));
+}
+
+/** 设置或清除离开状态。 */
+export async function setAway(networkId: string, message: string | null): Promise<void> {
+  await unwrap(commands.setAway(networkId, message));
+}
+
+/** 邀请某人加入频道。 */
+export async function inviteUser(networkId: string, nick: string, channel: string): Promise<void> {
+  await unwrap(commands.inviteUser(networkId, nick, channel));
 }
 
 /** 发送一条原始协议行。 */
@@ -167,15 +210,20 @@ export async function whois(networkId: string, nick: string): Promise<void> {
   await unwrap(commands.whois(networkId, nick));
 }
 
-/** 授予或撤销频道权限，例如 `+o` / `-v`。 */
-export async function setMemberMode(
+/**
+ * 设置频道 / 用户模式，例如 `MODE #rust +o alice`。
+ *
+ * 这是模式操作的唯一出口：`op`、`voice`、`ban` 之间只差模式字母与参数，
+ * 因此具体动作在前端拼装（见 `setMemberMode` / `banUser`），Rust 侧只保留
+ * 这一条通用路径。
+ */
+export async function setMode(
   networkId: string,
-  channel: string,
-  nick: string,
-  mode: string,
-  grant: boolean,
+  target: string,
+  modes: string,
+  args: string[],
 ): Promise<void> {
-  await unwrap(commands.setMemberMode(networkId, channel, nick, mode, grant));
+  await unwrap(commands.setMode(networkId, target, modes, args));
 }
 
 /** 把某人踢出频道。 */
@@ -188,7 +236,23 @@ export async function kickUser(
   await unwrap(commands.kickUser(networkId, channel, nick, reason));
 }
 
-/** 封禁某人（按昵称掩码）。 */
+/** 授予或撤销频道权限，例如 `+o` / `-v`。 */
+export async function setMemberMode(
+  networkId: string,
+  channel: string,
+  nick: string,
+  mode: string,
+  grant: boolean,
+): Promise<void> {
+  await setMode(networkId, channel, `${grant ? '+' : '-'}${mode}`, [nick]);
+}
+
+/**
+ * 封禁某人（按昵称掩码）。
+ *
+ * 掩码只约束昵称，任意用户名与主机都命中。更紧的封禁需要用户的 host，
+ * 那要一次 WHOIS 往返——留到以后，不在这里猜。
+ */
 export async function banUser(networkId: string, channel: string, nick: string): Promise<void> {
-  await unwrap(commands.banUser(networkId, channel, nick));
+  await setMode(networkId, channel, '+b', [`${nick}!*@*`]);
 }

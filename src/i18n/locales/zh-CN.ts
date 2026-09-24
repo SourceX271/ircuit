@@ -92,14 +92,68 @@ export const zhCN = {
 
   composer: {
     placeholder: '发送消息…（Enter 发送，Shift + Enter 换行）',
+    placeholderMultiline: '发送消息…（Ctrl + Enter 发送）',
     offlinePlaceholder: '尚未连接任何网络',
     send: '发送',
     format: '格式',
     emoji: '表情',
     attach: '附件',
-    commandHint: '可用命令：/join /msg /me /raw',
+    suggestions: '匹配的命令',
+    commandHint: 'Tab 补全 · ↑ 历史 · /help 查看全部命令',
+    ignoredCount: '已忽略 {{count}} 人',
     unknownCommand: '未知命令：/{{command}}',
     actionNeedsTarget: '/me 需要在一个频道或私聊里使用',
+
+    errors: {
+      needsChannel: '该命令需要在一个频道里使用',
+    },
+
+    ignore: {
+      applied: '已忽略 {{nick}}',
+      removed: '已取消忽略 {{nick}}',
+    },
+
+    set: {
+      applied: '已设置 {{option}}',
+      usage: '/set sendOnEnter <on|off>',
+      unknownOption: '未知选项：{{option}}',
+    },
+
+    help: {
+      all: '全部命令：{{commands}}',
+      usage: '{{usage}} — {{description}}',
+      unknown: '未知命令：/{{command}}',
+    },
+
+    commands: {
+      me: '发送一个动作',
+      msg: '打开私聊或发送私信',
+      notice: '发送 NOTICE（按惯例不触发自动回复）',
+      join: '加入频道',
+      part: '离开频道',
+      topic: '查看、设置或清除频道主题',
+      nick: '修改昵称',
+      away: '设置或清除离开状态',
+      mode: '设置频道或用户模式',
+      op: '授予管理员权限',
+      deop: '撤销管理员权限',
+      voice: '授予发言权限',
+      devoice: '撤销发言权限',
+      ban: '封禁某个昵称',
+      unban: '解除封禁',
+      kick: '把某人踢出频道',
+      invite: '邀请某人加入频道',
+      whois: '查询某个昵称',
+      ignore: '不再显示某人的发言',
+      unignore: '恢复显示某人的发言',
+      ctcp: '发送 CTCP 请求',
+      raw: '发送一条原始协议行',
+      clear: '清空当前缓冲区',
+      close: '关闭当前缓冲区',
+      quit: '断开网络连接',
+      set: '修改客户端选项',
+      help: '查看命令帮助',
+    },
   },
 
   status: {

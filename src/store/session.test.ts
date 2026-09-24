@@ -346,4 +346,66 @@ describe('session store', () => {
     expect(after?.unread).toBe(2);
     expect(before).not.toBe(after);
   });
+
+  it('closes a buffer, its history and its channel state', () => {
+    useSessionStore.getState().applyNetworkStatus(status());
+    useSessionStore.getState().applyMessage(message({ target: '#rust' }));
+    useSessionStore.getState().applyChannelSnapshot({
+      network_id: NETWORK,
+      name: '#rust',
+      topic: null,
+      members: [],
+      modes: '',
+      names_received: true,
+      seq: 1,
+    });
+
+    const id = bufferId(NETWORK, '#rust');
+    useSessionStore.getState().closeBuffer(id);
+
+    const state = useSessionStore.getState();
+    expect(state.buffers.some((buffer) => buffer.id === id)).toBe(false);
+    expect(state.lines[id]).toBeUndefined();
+    expect(state.channels[id]).toBeUndefined();
+  });
+
+  it('selects a neighbour when the active buffer is closed', () => {
+    useSessionStore.getState().applyNetworkStatus(status());
+    useSessionStore.getState().applyMessage(message({ target: '#rust' }));
+    useSessionStore.getState().applyMessage(message({ target: '#ruby' }));
+
+    const rust = bufferId(NETWORK, '#rust');
+    const ruby = bufferId(NETWORK, '#ruby');
+
+    useSessionStore.getState().selectBuffer(ruby);
+    useSessionStore.getState().closeBuffer(ruby);
+
+    // Closing the last buffer must not leave the main pane pointing at nothing
+    // while other buffers are still open.
+    expect(useSessionStore.getState().activeBufferId).toBe(rust);
+  });
+
+  it('leaves the selection alone when an inactive buffer is closed', () => {
+    useSessionStore.getState().applyNetworkStatus(status());
+    useSessionStore.getState().applyMessage(message({ target: '#rust' }));
+
+    const server = bufferId(NETWORK, '');
+    const rust = bufferId(NETWORK, '#rust');
+
+    useSessionStore.getState().selectBuffer(server);
+    useSessionStore.getState().closeBuffer(rust);
+
+    expect(useSessionStore.getState().activeBufferId).toBe(server);
+  });
+
+  it('clears a buffer without removing it', () => {
+    useSessionStore.getState().applyNetworkStatus(status());
+    useSessionStore.getState().applyMessage(message({ target: '#rust' }));
+
+    const id = bufferId(NETWORK, '#rust');
+    useSessionStore.getState().clearBuffer(id);
+
+    expect(useSessionStore.getState().lines[id]).toEqual([]);
+    expect(useSessionStore.getState().buffers.some((buffer) => buffer.id === id)).toBe(true);
+  });
 });

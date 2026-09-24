@@ -136,6 +136,194 @@ async fn joining_a_channel_reaches_the_server() {
 }
 
 #[tokio::test]
+async fn a_topic_round_trips_through_the_server() {
+    let server = TestServer::start(ServerConfig::default()).await.unwrap();
+    let (handle, mut events) = spawn(local(&server, "alice"), BackoffPolicy::immediate());
+    assert!(wait_for_registration(&mut events).await.is_some());
+
+    handle
+        .send(ClientCommand::Join("#rust".to_owned()))
+        .await
+        .unwrap();
+    assert!(server
+        .wait_for_line(|line| line == "JOIN #rust", TIMEOUT)
+        .await
+        .is_some());
+
+    // Query first: the server has no topic yet, so 331 comes back.
+    handle
+        .send(ClientCommand::Topic {
+            channel: "#rust".to_owned(),
+            topic: None,
+        })
+        .await
+        .unwrap();
+    assert!(
+        wait_for(&mut events, |event| {
+            matches!(event, NetworkEvent::Message(message) if message.command == Command::Numeric(331))
+        })
+        .await
+        .is_some(),
+        "a bare TOPIC should ask the server for the current topic"
+    );
+
+    // Set one. The wire form needs the colon sigil because the text has a space.
+    handle
+        .send(ClientCommand::Topic {
+            channel: "#rust".to_owned(),
+            topic: Some("hello world".to_owned()),
+        })
+        .await
+        .unwrap();
+    assert!(server
+        .wait_for_line(|line| line == "TOPIC #rust :hello world", TIMEOUT)
+        .await
+        .is_some());
+    assert_eq!(server.topic("#rust").await.as_deref(), Some("hello world"));
+
+    // The echo proves the change is visible to the client, not just accepted.
+    assert!(
+        wait_for(&mut events, |event| {
+            matches!(event, NetworkEvent::Message(message) if message.command == Command::Topic)
+        })
+        .await
+        .is_some(),
+        "the topic change never came back"
+    );
+
+    // Clearing sends an empty trailing parameter, which is a different request
+    // from asking what the topic is.
+    handle
+        .send(ClientCommand::Topic {
+            channel: "#rust".to_owned(),
+            topic: Some(String::new()),
+        })
+        .await
+        .unwrap();
+    assert!(server
+        .wait_for_line(|line| line == "TOPIC #rust :", TIMEOUT)
+        .await
+        .is_some());
+    assert_eq!(server.topic("#rust").await, None);
+
+    let _ = handle.send(ClientCommand::Shutdown).await;
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn notice_away_invite_and_mode_reach_the_server() {
+    let server = TestServer::start(ServerConfig::default()).await.unwrap();
+    let (handle, mut events) = spawn(local(&server, "alice"), BackoffPolicy::immediate());
+    assert!(wait_for_registration(&mut events).await.is_some());
+
+    handle
+        .send(ClientCommand::Notice {
+            target: "bob".to_owned(),
+            text: "psst there".to_owned(),
+        })
+        .await
+        .unwrap();
+    assert!(server
+        .wait_for_line(|line| line == "NOTICE bob :psst there", TIMEOUT)
+        .await
+        .is_some());
+
+    handle
+        .send(ClientCommand::Away {
+            message: Some("out to lunch".to_owned()),
+        })
+        .await
+        .unwrap();
+    assert!(server
+        .wait_for_line(|line| line == "AWAY :out to lunch", TIMEOUT)
+        .await
+        .is_some());
+    assert_eq!(server.away().await.as_deref(), Some("out to lunch"));
+
+    // The 306 acknowledgement is what the user sees, so it has to come back.
+    assert!(
+        wait_for(&mut events, |event| {
+            matches!(event, NetworkEvent::Message(message) if message.command == Command::Numeric(306))
+        })
+        .await
+        .is_some(),
+        "no 306 RPL_NOWAWAY arrived"
+    );
+
+    handle
+        .send(ClientCommand::Away { message: None })
+        .await
+        .unwrap();
+    assert!(server
+        .wait_for_line(|line| line == "AWAY", TIMEOUT)
+        .await
+        .is_some());
+    assert_eq!(server.away().await, None);
+
+    handle
+        .send(ClientCommand::Invite {
+            nick: "bob".to_owned(),
+            channel: "#rust".to_owned(),
+        })
+        .await
+        .unwrap();
+    assert!(server
+        .wait_for_line(|line| line == "INVITE bob #rust", TIMEOUT)
+        .await
+        .is_some());
+
+    // A privilege change is just a MODE with an argument, which is why the
+    // client keeps one general path for all of them.
+    handle
+        .send(ClientCommand::Mode {
+            target: "#rust".to_owned(),
+            modes: "+o".to_owned(),
+            args: vec!["bob".to_owned()],
+        })
+        .await
+        .unwrap();
+    assert!(server
+        .wait_for_line(|line| line == "MODE #rust +o bob", TIMEOUT)
+        .await
+        .is_some());
+
+    let _ = handle.send(ClientCommand::Shutdown).await;
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn leaving_a_channel_reaches_the_server() {
+    let server = TestServer::start(ServerConfig::default()).await.unwrap();
+    let (handle, mut events) = spawn(local(&server, "alice"), BackoffPolicy::immediate());
+    assert!(wait_for_registration(&mut events).await.is_some());
+
+    handle
+        .send(ClientCommand::Join("#rust".to_owned()))
+        .await
+        .unwrap();
+    assert!(server
+        .wait_for_line(|line| line == "JOIN #rust", TIMEOUT)
+        .await
+        .is_some());
+
+    handle
+        .send(ClientCommand::Part {
+            channel: "#rust".to_owned(),
+            reason: Some("done here".to_owned()),
+        })
+        .await
+        .unwrap();
+    assert!(server
+        .wait_for_line(|line| line == "PART #rust :done here", TIMEOUT)
+        .await
+        .is_some());
+    assert!(server.channels().await.is_empty());
+
+    let _ = handle.send(ClientCommand::Shutdown).await;
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn a_sent_message_is_echoed_back() {
     let server = TestServer::start(ServerConfig::default()).await.unwrap();
     let (handle, mut events) = spawn(local(&server, "alice"), BackoffPolicy::immediate());

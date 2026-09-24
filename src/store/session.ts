@@ -201,6 +201,10 @@ export interface SessionState {
   selectBuffer: (id: string) => void;
   /** Open a private conversation with `nick`, creating the buffer if needed. */
   openQuery: (networkId: string, nick: string) => void;
+  /** Forget a buffer and its history. Local only; does not leave a channel. */
+  closeBuffer: (id: string) => void;
+  /** Drop a buffer's history but keep the buffer itself. */
+  clearBuffer: (id: string) => void;
   toggleIgnored: (networkId: string, nick: string) => void;
   removeNetwork: (networkId: string) => void;
 }
@@ -369,6 +373,34 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
       return { buffers, activeBufferId: buffer.id };
     });
+  },
+
+  closeBuffer: (id) => {
+    set((state) => {
+      const index = state.buffers.findIndex((buffer) => buffer.id === id);
+      if (index < 0) return {};
+
+      const buffers = state.buffers.filter((buffer) => buffer.id !== id);
+
+      const lines = { ...state.lines };
+      delete lines[id];
+
+      const channels = { ...state.channels };
+      delete channels[id];
+
+      // Selecting a neighbour keeps the keyboard flow intact: closing the last
+      // buffer must not leave the main pane empty while others are still open.
+      const activeBufferId =
+        state.activeBufferId === id
+          ? (buffers[Math.min(index, buffers.length - 1)]?.id ?? null)
+          : state.activeBufferId;
+
+      return { buffers, lines, channels, activeBufferId };
+    });
+  },
+
+  clearBuffer: (id) => {
+    set((state) => (state.lines[id] ? { lines: { ...state.lines, [id]: [] } } : {}));
   },
 
   toggleIgnored: (networkId, nick) => {
