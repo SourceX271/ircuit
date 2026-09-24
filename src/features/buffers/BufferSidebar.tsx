@@ -1,11 +1,11 @@
-import { Hash, Plus, Power, Server, User } from 'lucide-react';
+import { Hash, PanelLeftClose, Plus, Power, Server, User } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { Badge } from '@/components/ui/badge';
 import { IconButton } from '@/components/ui/icon-button';
 import { cn } from '@/lib/cn';
 import { disconnectNetwork, type ConnectionState } from '@/lib/ipc';
-import { useSessionStore, type SessionBuffer } from '@/store/session';
+import { orderedBuffers, useSessionStore, type SessionBuffer } from '@/store/session';
 
 /** Colour of the per-network status dot. */
 const STATE_DOT: Record<ConnectionState, string> = {
@@ -20,13 +20,6 @@ const BUFFER_ICONS = {
   channel: Hash,
   query: User,
 } as const;
-
-/** Server buffer first, then channels, then conversations. */
-const KIND_ORDER: Record<SessionBuffer['kind'], number> = {
-  server: 0,
-  channel: 1,
-  query: 2,
-};
 
 function BufferRow({ buffer }: { buffer: SessionBuffer }) {
   const { t } = useTranslation();
@@ -87,12 +80,7 @@ function NetworkGroup({ networkId }: { networkId: string }) {
 
   if (!network) return null;
 
-  const owned = buffers
-    .filter((buffer) => buffer.networkId === networkId)
-    .sort((left, right) => {
-      const byKind = KIND_ORDER[left.kind] - KIND_ORDER[right.kind];
-      return byKind !== 0 ? byKind : left.target.localeCompare(right.target);
-    });
+  const owned = orderedBuffers([network], buffers);
 
   const onDisconnect = () => {
     void disconnectNetwork(networkId)
@@ -133,9 +121,10 @@ function NetworkGroup({ networkId }: { networkId: string }) {
 
 export interface BufferSidebarProps {
   onAddNetwork: () => void;
+  onCollapse: () => void;
 }
 
-export function BufferSidebar({ onAddNetwork }: BufferSidebarProps) {
+export function BufferSidebar({ onAddNetwork, onCollapse }: BufferSidebarProps) {
   const { t } = useTranslation();
   const networks = useSessionStore((state) => state.networks);
 
@@ -145,9 +134,14 @@ export function BufferSidebar({ onAddNetwork }: BufferSidebarProps) {
         <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-faint">
           {t('sidebar.networks')}
         </span>
-        <IconButton label={t('sidebar.addNetwork')} size="sm" onClick={onAddNetwork}>
-          <Plus />
-        </IconButton>
+        <div className="flex items-center">
+          <IconButton label={t('sidebar.addNetwork')} size="sm" onClick={onAddNetwork}>
+            <Plus />
+          </IconButton>
+          <IconButton label={t('shell.hideSidebar')} size="sm" onClick={onCollapse}>
+            <PanelLeftClose />
+          </IconButton>
+        </div>
       </div>
 
       <nav aria-label={t('sidebar.bufferActions')} className="flex-1 overflow-y-auto pb-3">

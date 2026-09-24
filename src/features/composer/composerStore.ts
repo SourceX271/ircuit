@@ -17,19 +17,36 @@ import type { SessionLine } from '@/store/session';
 export const HISTORY_LIMIT = 100;
 
 export interface ComposerState {
-  /** Unsent text, keyed by buffer id. */
+  /** Unsent text, keyed by buffer id. This *is* the composer's value. */
   drafts: Record<string, string>;
   /** Sent lines, oldest first, keyed by buffer id. */
   history: Record<string, string[]>;
+  /**
+   * Bumped when something outside the composer wants the caret in it.
+   *
+   * A counter rather than a boolean: requesting focus twice in a row must
+   * produce two effects, and a boolean would collapse them into one.
+   */
+  focusToken: number;
 
   setDraft: (bufferId: string, value: string) => void;
   /** Remember a line the user actually sent. */
   pushHistory: (bufferId: string, line: string) => void;
+  /**
+   * Put `text` into a buffer's draft.
+   *
+   * Non-destructive on purpose: the command palette can be opened halfway
+   * through a sentence, and throwing that sentence away to insert a command
+   * would be a data loss the user never asked for.
+   */
+  insert: (bufferId: string, text: string) => void;
+  requestFocus: () => void;
 }
 
 export const useComposerStore = create<ComposerState>((set) => ({
   drafts: {},
   history: {},
+  focusToken: 0,
 
   setDraft: (bufferId, value) => {
     set((state) => {
@@ -60,6 +77,18 @@ export const useComposerStore = create<ComposerState>((set) => ({
 
       return { history: { ...state.history, [bufferId]: next } };
     });
+  },
+
+  insert: (bufferId, text) => {
+    set((state) => {
+      const existing = state.drafts[bufferId] ?? '';
+      const separator = existing === '' || /\s$/.test(existing) ? '' : ' ';
+      return { drafts: { ...state.drafts, [bufferId]: `${existing}${separator}${text}` } };
+    });
+  },
+
+  requestFocus: () => {
+    set((state) => ({ focusToken: state.focusToken + 1 }));
   },
 }));
 

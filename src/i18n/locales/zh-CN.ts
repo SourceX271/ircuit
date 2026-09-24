@@ -10,6 +10,44 @@ export const zhCN = {
 
   shell: {
     milestone: 'M2 · 会话 UI',
+    hideSidebar: '收起网络栏',
+    showSidebar: '展开网络栏',
+    hideMembers: '收起成员栏',
+    showMembers: '展开成员栏',
+  },
+
+  palette: {
+    title: '命令面板',
+    placeholder: '输入命令、频道或动作…',
+    empty: '没有匹配项',
+    groups: {
+      buffers: '会话',
+      actions: '操作',
+      commands: '命令',
+    },
+    actions: {
+      focusComposer: '跳到输入框',
+      showSidebar: '展开网络栏',
+      hideSidebar: '收起网络栏',
+      showMembers: '展开成员栏',
+      hideMembers: '收起成员栏',
+      cycleTheme: '切换到{{theme}}外观',
+      switchLanguage: '切换语言为{{language}}',
+      connect: '添加网络…',
+      closeBuffer: '关闭当前会话',
+      clearBuffer: '清空当前会话记录',
+      disconnect: '断开 {{network}}',
+    },
+  },
+
+  shortcuts: {
+    paletteOpen: '命令面板',
+    toggleSidebar: '展开 / 收起网络栏',
+    toggleMembers: '展开 / 收起成员栏',
+    nextBuffer: '下一个会话',
+    previousBuffer: '上一个会话',
+    jumpToBuffer: '跳到第 1–9 个会话',
+    closeBuffer: '关闭当前会话',
   },
 
   a11y: {

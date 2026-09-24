@@ -20,3 +20,46 @@ export function readStoredSendOnEnter(storage: Pick<Storage, 'getItem'>): boolea
 export function persistSendOnEnter(storage: Pick<Storage, 'setItem'>, value: boolean): void {
   storage.setItem(SEND_ON_ENTER_KEY, value ? 'true' : 'false');
 }
+
+/** 左侧网络/频道栏是否展开。 */
+export const SIDEBAR_OPEN_KEY = 'ircuit.sidebarOpen';
+
+/** 右侧成员栏是否展开。 */
+export const MEMBERS_OPEN_KEY = 'ircuit.membersOpen';
+
+/**
+ * 读取一个布尔偏好。
+ *
+ * 与 `sendOnEnter` 不同，这里必须显式给出默认值：折叠与展开都会持久化，
+ * 所以「键不存在」和「存了 false」是两种不同的情况，不能互相代表。
+ */
+function readStoredFlag(
+  storage: Pick<Storage, 'getItem'>,
+  key: string,
+  fallback: boolean,
+): boolean {
+  const raw = storage.getItem(key);
+  if (raw === null) return fallback;
+  return raw !== 'false';
+}
+
+function persistFlag(storage: Pick<Storage, 'setItem'>, key: string, value: boolean): void {
+  storage.setItem(key, value ? 'true' : 'false');
+}
+
+/** 两侧默认展开：新用户先看到完整布局，再自己决定收起来。 */
+export function readStoredSidebarOpen(storage: Pick<Storage, 'getItem'>): boolean {
+  return readStoredFlag(storage, SIDEBAR_OPEN_KEY, true);
+}
+
+export function persistSidebarOpen(storage: Pick<Storage, 'setItem'>, value: boolean): void {
+  persistFlag(storage, SIDEBAR_OPEN_KEY, value);
+}
+
+export function readStoredMembersOpen(storage: Pick<Storage, 'getItem'>): boolean {
+  return readStoredFlag(storage, MEMBERS_OPEN_KEY, true);
+}
+
+export function persistMembersOpen(storage: Pick<Storage, 'setItem'>, value: boolean): void {
+  persistFlag(storage, MEMBERS_OPEN_KEY, value);
+}

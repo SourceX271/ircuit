@@ -90,7 +90,7 @@ beforeEach(() => {
 describe('MemberList', () => {
   it('shows the members the server reported, with their prefixes', () => {
     seed([member('ircuit', '@'), member('bob', '+'), member('alice', null)]);
-    render(<MemberList />);
+    render(<MemberList onCollapse={() => {}} />);
 
     expect(screen.getByText('ircuit')).toBeInTheDocument();
     expect(screen.getByText('bob')).toBeInTheDocument();
@@ -109,14 +109,14 @@ describe('MemberList', () => {
       },
     }));
 
-    render(<MemberList />);
+    render(<MemberList onCollapse={() => {}} />);
     // An empty list before NAMES arrives means "not asked yet", not "empty".
     expect(screen.getByText(/正在获取成员列表/)).toBeInTheDocument();
   });
 
   it('opens a menu on right-click with the member actions', () => {
     seed([member('ircuit', '@'), member('bob', '+')]);
-    render(<MemberList />);
+    render(<MemberList onCollapse={() => {}} />);
 
     fireEvent.contextMenu(screen.getByText('bob'));
 
@@ -131,7 +131,7 @@ describe('MemberList', () => {
 
   it('offers to remove a prefix the member already holds', () => {
     seed([member('ircuit', '@'), member('alice', '@')]);
-    render(<MemberList />);
+    render(<MemberList onCollapse={() => {}} />);
 
     fireEvent.contextMenu(screen.getByText('alice'));
     expect(screen.getByRole('menuitem', { name: /取消操作员/ })).toBeInTheDocument();
@@ -139,7 +139,7 @@ describe('MemberList', () => {
 
   it('disables the actions that would apply to ourselves', () => {
     seed([member('ircuit', '@'), member('bob', null)]);
-    render(<MemberList />);
+    render(<MemberList onCollapse={() => {}} />);
 
     fireEvent.contextMenu(screen.getByText('ircuit'));
 
@@ -152,7 +152,7 @@ describe('MemberList', () => {
     // A plain member cannot kick or ban, and offering it would only produce a
     // refusal from the server.
     seed([member('ircuit', null), member('bob', null)]);
-    render(<MemberList />);
+    render(<MemberList onCollapse={() => {}} />);
 
     fireEvent.contextMenu(screen.getByText('bob'));
 
@@ -165,7 +165,7 @@ describe('MemberList', () => {
 
   it('sends the command the menu item names', () => {
     seed([member('ircuit', '@'), member('bob', null)]);
-    render(<MemberList />);
+    render(<MemberList onCollapse={() => {}} />);
 
     fireEvent.contextMenu(screen.getByText('bob'));
     fireEvent.click(screen.getByRole('menuitem', { name: /设为操作员/ }));
@@ -175,7 +175,7 @@ describe('MemberList', () => {
 
   it('closes the menu after an action runs', () => {
     seed([member('ircuit', '@'), member('bob', null)]);
-    render(<MemberList />);
+    render(<MemberList onCollapse={() => {}} />);
 
     fireEvent.contextMenu(screen.getByText('bob'));
     fireEvent.click(screen.getByRole('menuitem', { name: /WHOIS/ }));
@@ -186,7 +186,7 @@ describe('MemberList', () => {
 
   it('closes the menu on Escape', () => {
     seed([member('ircuit', '@'), member('bob', null)]);
-    render(<MemberList />);
+    render(<MemberList onCollapse={() => {}} />);
 
     fireEvent.contextMenu(screen.getByText('bob'));
     expect(screen.getByRole('menu')).toBeInTheDocument();
@@ -197,14 +197,14 @@ describe('MemberList', () => {
 
   it('toggles an ignore, and shows the member as struck through', () => {
     seed([member('ircuit', '@'), member('bob', null)]);
-    const { rerender } = render(<MemberList />);
+    const { rerender } = render(<MemberList onCollapse={() => {}} />);
 
     fireEvent.contextMenu(screen.getByText('bob'));
     fireEvent.click(screen.getByRole('menuitem', { name: '忽略此人' }));
 
     expect(useSessionStore.getState().ignored[NETWORK]).toEqual(['bob']);
 
-    rerender(<MemberList />);
+    rerender(<MemberList onCollapse={() => {}} />);
     // The row itself is struck through, not just the nickname span.
     expect(screen.getByRole('button', { name: 'bob' }).className).toContain('line-through');
 
@@ -217,7 +217,7 @@ describe('MemberList', () => {
     seed([member('ircuit', '@')]);
     useSessionStore.setState({ buffers: [], activeBufferId: null });
 
-    render(<MemberList />);
+    render(<MemberList onCollapse={() => {}} />);
     expect(screen.getByText(/这里没有成员列表/)).toBeInTheDocument();
   });
 });

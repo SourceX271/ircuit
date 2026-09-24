@@ -125,6 +125,40 @@ function kindForTarget(target: string): BufferKind {
   return isChannelName(target) ? 'channel' : 'query';
 }
 
+/** Server buffer first, then channels, then conversations. */
+const KIND_ORDER: Record<BufferKind, number> = {
+  server: 0,
+  channel: 1,
+  query: 2,
+};
+
+/**
+ * Buffers in the order the sidebar shows them.
+ *
+ * Shared with keyboard navigation rather than duplicated: "next buffer" that
+ * jumps somewhere other than the row below the current one is worse than no
+ * shortcut at all.
+ */
+export function orderedBuffers(
+  networks: readonly NetworkSummary[],
+  buffers: readonly SessionBuffer[],
+): SessionBuffer[] {
+  const result: SessionBuffer[] = [];
+
+  for (const network of networks) {
+    const owned = buffers
+      .filter((buffer) => buffer.networkId === network.id)
+      .sort((left, right) => {
+        const byKind = KIND_ORDER[left.kind] - KIND_ORDER[right.kind];
+        return byKind !== 0 ? byKind : left.target.localeCompare(right.target);
+      });
+
+    result.push(...owned);
+  }
+
+  return result;
+}
+
 /** Whether the text mentions `nick` as a word-ish token. */ export function mentions(
   text: string,
   nick: string | null,

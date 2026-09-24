@@ -49,7 +49,6 @@ export function Composer() {
   const { t } = useTranslation();
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [value, setValue] = useState('');
   const [caret, setCaret] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -72,6 +71,14 @@ export function Composer() {
   const network = networks.find((candidate) => candidate.id === buffer?.networkId) ?? null;
 
   const bufferKey = activeBufferId ?? '';
+
+  // The draft *is* the composer's value. Keeping a second copy in local state
+  // would need a sync effect on every buffer switch, and that effect is a race:
+  // anything else that writes a draft — the command palette, say — gets
+  // overwritten by it.
+  const value = useComposerStore((state) => state.drafts[bufferKey] ?? '');
+  const focusToken = useComposerStore((state) => state.focusToken);
+
   const lines = useSessionStore((state) => state.lines[bufferKey]);
   const channel = useSessionStore((state) => state.channels[bufferKey] ?? null);
 
@@ -108,20 +115,24 @@ export function Composer() {
 
   const ignoredCount = ignored[networkId]?.length ?? 0;
 
-  // Load the draft belonging to the buffer that just became active. Reading the
-  // store imperatively keeps this effect keyed on the buffer alone: depending on
-  // the draft would re-run it on every keystroke and fight the user's typing.
+  // Reset the per-buffer cursors and transient messages when the buffer
+  // changes. The text itself needs no loading: it is read straight from the
+  // draft, so a buffer switch cannot lose or resurrect anything.
   useEffect(() => {
-    const draft = useComposerStore.getState().drafts[bufferKey] ?? '';
-
-    setValue(draft);
-    setCaret(draft.length);
+    setCaret(0);
     setError(null);
     setNotice(null);
 
     sessionRef.current = null;
     historyIndexRef.current = null;
   }, [bufferKey]);
+
+  // Focus when something outside the composer asks for it, e.g. right after the
+  // command palette inserted a command.
+  useEffect(() => {
+    if (focusToken === 0) return;
+    textareaRef.current?.focus();
+  }, [focusToken]);
 
   // Autosize.
   useEffect(() => {
@@ -135,14 +146,12 @@ export function Composer() {
   /**
    * Write text into the box.
    *
-   * The draft is updated here rather than in an effect so that switching buffers
-   * mid-sentence cannot lose the text: the store already has it before the
-   * switch happens.
+   * The draft is the value, so this is the only write path and the caret is the
+   * only thing left to place by hand.
    */
   const edit = (next: string, nextCaret?: number) => {
-    setValue(next);
-    setCaret(nextCaret ?? next.length);
     useComposerStore.getState().setDraft(bufferKey, next);
+    setCaret(nextCaret ?? next.length);
 
     if (nextCaret !== undefined) {
       // The caret can only be placed after React has committed the new value.

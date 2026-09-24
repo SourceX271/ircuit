@@ -9,6 +9,44 @@ export const en: TranslationSchema = {
 
   shell: {
     milestone: 'M2 · Session UI',
+    hideSidebar: 'Collapse the network list',
+    showSidebar: 'Expand the network list',
+    hideMembers: 'Collapse the member list',
+    showMembers: 'Expand the member list',
+  },
+
+  palette: {
+    title: 'Command palette',
+    placeholder: 'Type a command, buffer or action…',
+    empty: 'Nothing matches',
+    groups: {
+      buffers: 'Buffers',
+      actions: 'Actions',
+      commands: 'Commands',
+    },
+    actions: {
+      focusComposer: 'Focus the input',
+      showSidebar: 'Show the network list',
+      hideSidebar: 'Hide the network list',
+      showMembers: 'Show the member list',
+      hideMembers: 'Hide the member list',
+      cycleTheme: 'Switch to the {{theme}} theme',
+      switchLanguage: 'Switch the language to {{language}}',
+      connect: 'Add a network…',
+      closeBuffer: 'Close this buffer',
+      clearBuffer: 'Clear this buffer',
+      disconnect: 'Disconnect {{network}}',
+    },
+  },
+
+  shortcuts: {
+    paletteOpen: 'Command palette',
+    toggleSidebar: 'Show or hide the network list',
+    toggleMembers: 'Show or hide the member list',
+    nextBuffer: 'Next buffer',
+    previousBuffer: 'Previous buffer',
+    jumpToBuffer: 'Jump to buffer 1–9',
+    closeBuffer: 'Close this buffer',
   },
 
   a11y: {

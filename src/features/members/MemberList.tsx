@@ -1,7 +1,9 @@
+import { PanelRightClose } from 'lucide-react';
 import { useMemo, useState, type MouseEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ContextMenu, type MenuItem } from '@/components/ui/context-menu';
+import { IconButton } from '@/components/ui/icon-button';
 import { cn } from '@/lib/cn';
 import { banUser, kickUser, setMemberMode, whois, type MemberInfo } from '@/lib/ipc';
 import { isIgnored, useSessionStore } from '@/store/session';
@@ -27,7 +29,12 @@ const PREFIX_LABEL: Record<string, string> = {
 /** Prefixes that may kick and ban. Voice does not count. */
 const MODERATOR_PREFIXES = new Set(['~', '&', '%', '@']);
 
-export function MemberList() {
+export interface MemberListProps {
+  /** Collapse this column. The rail that replaces it brings it back. */
+  onCollapse: () => void;
+}
+
+export function MemberList({ onCollapse }: MemberListProps) {
   const { t } = useTranslation();
 
   const [menu, setMenu] = useState<{ x: number; y: number; member: MemberInfo } | null>(null);
@@ -124,7 +131,7 @@ export function MemberList() {
 
   if (!buffer || buffer.kind !== 'channel') {
     return (
-      <Shell title={t('members.title')}>
+      <Shell title={t('members.title')} onCollapse={onCollapse}>
         <p className="px-3 text-[11.5px] text-faint">{t('members.notAChannel')}</p>
       </Shell>
     );
@@ -132,7 +139,7 @@ export function MemberList() {
 
   if (!channel || !channel.names_received) {
     return (
-      <Shell title={t('members.title')}>
+      <Shell title={t('members.title')} onCollapse={onCollapse}>
         <p className="px-3 text-[11.5px] text-faint">{t('members.loading')}</p>
       </Shell>
     );
@@ -145,7 +152,7 @@ export function MemberList() {
 
   return (
     <>
-      <Shell title={t('members.title')} count={channel.members.length}>
+      <Shell title={t('members.title')} count={channel.members.length} onCollapse={onCollapse}>
         <ul className="flex-1 overflow-y-auto px-1.5 pb-2">
           {channel.members.map((member) => (
             <MemberRow
@@ -222,12 +229,22 @@ function MemberRow({
   );
 }
 
-function Shell({ title, count, children }: { title: string; count?: number; children: ReactNode }) {
+function Shell({
+  title,
+  count,
+  onCollapse,
+  children,
+}: {
+  title: string;
+  count?: number;
+  onCollapse: () => void;
+  children: ReactNode;
+}) {
   const { t } = useTranslation();
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex shrink-0 items-baseline gap-2 px-3 py-2">
+      <header className="flex shrink-0 items-center gap-2 px-3 py-2">
         <h2 className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-faint">
           {title}
         </h2>
@@ -236,6 +253,14 @@ function Shell({ title, count, children }: { title: string; count?: number; chil
             {t('members.count', { count })}
           </span>
         ) : null}
+        <IconButton
+          label={t('shell.hideMembers')}
+          size="sm"
+          className="ml-auto"
+          onClick={onCollapse}
+        >
+          <PanelRightClose />
+        </IconButton>
       </header>
       {children}
     </div>

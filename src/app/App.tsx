@@ -1,17 +1,22 @@
-import { useState } from 'react';
+import { PanelLeft, PanelRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+import { IconButton } from '@/components/ui/icon-button';
 import { BufferSidebar } from '@/features/buffers/BufferSidebar';
 import { Composer } from '@/features/composer/Composer';
 import { MemberList } from '@/features/members/MemberList';
 import { MessageList } from '@/features/messages/MessageList';
 import { TopicBar } from '@/features/messages/TopicBar';
 import { NetworkDialog } from '@/features/networks/NetworkDialog';
+import { CommandPalette } from '@/features/palette/CommandPalette';
 import { CoreModulesCard } from '@/features/selfcheck/CoreModulesCard';
 import { useCoreBridge } from '@/features/selfcheck/useCoreBridge';
 import { StatusBar } from '@/features/shell/StatusBar';
 import { TopBar } from '@/features/shell/TopBar';
+import { useShortcuts } from '@/features/shortcuts/useShortcuts';
+import { cn } from '@/lib/cn';
 import { useSessionStore } from '@/store/session';
+import { useUiStore } from '@/store/ui';
 
 import { useSessionBridge } from './useSessionBridge';
 import { useThemeSync } from './useThemeSync';
@@ -20,16 +25,23 @@ import { useThemeSync } from './useThemeSync';
  * Main window: top bar, three columns, status bar.
  *
  * The message list takes every remaining pixel because it is the point of the
- * application; both side columns are fixed-width and can be read at a glance.
+ * application; both side columns are fixed-width and can be collapsed when the
+ * window is narrow or the user simply wants more room to read.
  */
 export function App() {
   const { t } = useTranslation();
   useThemeSync();
   useSessionBridge();
+  useShortcuts();
 
   const bridge = useCoreBridge();
 
-  const [networkDialogOpen, setNetworkDialogOpen] = useState(false);
+  const sidebarOpen = useUiStore((state) => state.sidebarOpen);
+  const membersOpen = useUiStore((state) => state.membersOpen);
+  const toggleSidebar = useUiStore((state) => state.toggleSidebar);
+  const toggleMembers = useUiStore((state) => state.toggleMembers);
+  const connectionDialogOpen = useUiStore((state) => state.connectionDialogOpen);
+  const setConnectionDialogOpen = useUiStore((state) => state.setConnectionDialogOpen);
 
   const activeBufferId = useSessionStore((state) => state.activeBufferId);
   const buffers = useSessionStore((state) => state.buffers);
@@ -50,7 +62,14 @@ export function App() {
       <TopBar />
 
       <div className="flex min-h-0 flex-1">
-        <BufferSidebar onAddNetwork={() => setNetworkDialogOpen(true)} />
+        {sidebarOpen ? (
+          <BufferSidebar
+            onAddNetwork={() => setConnectionDialogOpen(true)}
+            onCollapse={toggleSidebar}
+          />
+        ) : (
+          <CollapsedRail side="left" onExpand={toggleSidebar} label={t('shell.showSidebar')} />
+        )}
 
         <main id="main" className="flex min-w-0 flex-1 flex-col">
           <TopicBar
@@ -62,18 +81,55 @@ export function App() {
           <Composer />
         </main>
 
-        <aside
-          aria-label={t('members.title')}
-          className="flex w-56 shrink-0 flex-col border-l border-line bg-sidebar"
-        >
-          <MemberList />
-          <CoreModulesCard bridge={bridge} />
-        </aside>
+        {membersOpen ? (
+          <aside
+            aria-label={t('members.title')}
+            className="flex w-56 shrink-0 flex-col border-l border-line bg-sidebar"
+          >
+            <MemberList onCollapse={toggleMembers} />
+            <CoreModulesCard bridge={bridge} />
+          </aside>
+        ) : (
+          <CollapsedRail side="right" onExpand={toggleMembers} label={t('shell.showMembers')} />
+        )}
       </div>
 
       <StatusBar bridge={bridge} />
 
-      <NetworkDialog open={networkDialogOpen} onClose={() => setNetworkDialogOpen(false)} />
+      <NetworkDialog open={connectionDialogOpen} onClose={() => setConnectionDialogOpen(false)} />
+
+      <CommandPalette />
+    </div>
+  );
+}
+
+/**
+ * What is left of a collapsed sidebar: one button, at the edge.
+ *
+ * A collapsed column that leaves nothing behind is a dead end for anyone who
+ * does not know the shortcut, so the expand affordance stays visible.
+ */
+function CollapsedRail({
+  side,
+  onExpand,
+  label,
+}: {
+  side: 'left' | 'right';
+  onExpand: () => void;
+  label: string;
+}) {
+  const Icon = side === 'left' ? PanelLeft : PanelRight;
+
+  return (
+    <div
+      className={cn(
+        'flex w-9 shrink-0 flex-col items-center border-line pt-2',
+        side === 'left' ? 'border-r bg-sidebar' : 'border-l bg-sidebar',
+      )}
+    >
+      <IconButton label={label} size="sm" onClick={onExpand}>
+        <Icon />
+      </IconButton>
     </div>
   );
 }

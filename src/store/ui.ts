@@ -1,7 +1,14 @@
 import { create } from 'zustand';
 
 import i18n, { type Language, persistLanguage, readStoredLanguage } from '@/i18n';
-import { persistSendOnEnter, readStoredSendOnEnter } from '@/lib/prefs';
+import {
+  persistMembersOpen,
+  persistSendOnEnter,
+  persistSidebarOpen,
+  readStoredMembersOpen,
+  readStoredSendOnEnter,
+  readStoredSidebarOpen,
+} from '@/lib/prefs';
 import {
   applyTheme,
   persistTheme,
@@ -11,7 +18,7 @@ import {
 } from '@/lib/theme';
 
 /**
- * 界面偏好（外观、语言、输入习惯）。
+ * 界面偏好（外观、语言、布局、输入习惯）。
  *
  * 只放「与后端无关的界面状态」。网络、buffer、消息等状态在 M1/M2 由
  * Rust 核心推送后建立，不放在这里。
@@ -21,15 +28,32 @@ export interface UiState {
   language: Language;
   /** 按 Enter 直接发送；关闭后 Enter 换行，需要 Ctrl/Cmd + Enter 才发送。 */
   sendOnEnter: boolean;
+  /** 左侧网络/频道栏是否展开。 */
+  sidebarOpen: boolean;
+  /** 右侧成员栏是否展开。 */
+  membersOpen: boolean;
+  /** 命令面板是否打开。不持久化：没有人希望启动时面板是开着的。 */
+  paletteOpen: boolean;
+  /** 新建连接的对话框是否打开。同样不持久化。 */
+  connectionDialogOpen: boolean;
+
   setThemeMode: (mode: ThemeMode) => void;
   setLanguage: (language: Language) => void;
   setSendOnEnter: (value: boolean) => void;
+  toggleSidebar: () => void;
+  toggleMembers: () => void;
+  setPaletteOpen: (open: boolean) => void;
+  setConnectionDialogOpen: (open: boolean) => void;
 }
 
-export const useUiStore = create<UiState>((set) => ({
+export const useUiStore = create<UiState>((set, get) => ({
   themeMode: readStoredTheme(window.localStorage),
   language: readStoredLanguage(window.localStorage),
   sendOnEnter: readStoredSendOnEnter(window.localStorage),
+  sidebarOpen: readStoredSidebarOpen(window.localStorage),
+  membersOpen: readStoredMembersOpen(window.localStorage),
+  paletteOpen: false,
+  connectionDialogOpen: false,
 
   setThemeMode: (mode) => {
     persistTheme(window.localStorage, mode);
@@ -48,4 +72,20 @@ export const useUiStore = create<UiState>((set) => ({
     persistSendOnEnter(window.localStorage, value);
     set({ sendOnEnter: value });
   },
+
+  toggleSidebar: () => {
+    const value = !get().sidebarOpen;
+    persistSidebarOpen(window.localStorage, value);
+    set({ sidebarOpen: value });
+  },
+
+  toggleMembers: () => {
+    const value = !get().membersOpen;
+    persistMembersOpen(window.localStorage, value);
+    set({ membersOpen: value });
+  },
+
+  setPaletteOpen: (open) => set({ paletteOpen: open }),
+
+  setConnectionDialogOpen: (open) => set({ connectionDialogOpen: open }),
 }));
