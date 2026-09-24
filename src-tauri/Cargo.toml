@@ -1,0 +1,42 @@
+[package]
+name = "ircuit"
+description = "现代、简洁美观、功能完整的跨平台桌面 IRC 客户端"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+default-run = "ircuit"
+
+[lib]
+name = "ircuit_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# 核心 crate —— 协议与状态全部在 UI 之外，前端只通过 IPC 访问。
+ircuit-proto = { workspace = true }
+ircuit-client = { workspace = true }
+ircuit-state = { workspace = true }
+ircuit-encoding = { workspace = true }
+ircuit-storage = { workspace = true }
+ircuit-dcc = { workspace = true }
+ircuit-plugin = { workspace = true }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+tauri = { version = "2", features = [] }
+
+# IPC 类型绑定：Rust 类型是唯一契约，TS 类型自动生成。
+specta = { version = "=2.0.0-rc.25", features = ["derive"] }
+tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
+# tauri-specta 只负责收集，具体生成器由 specta-typescript 提供。
+specta-typescript = "0.0.12"
+
+[lints]
+workspace = true

@@ -1,0 +1,67 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/ircuit-proto",
+  "crates/ircuit-client",
+  "crates/ircuit-state",
+  "crates/ircuit-encoding",
+  "crates/ircuit-storage",
+  "crates/ircuit-dcc",
+  "crates/ircuit-plugin",
+  "src-tauri",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77"
+license = "MIT OR Apache-2.0"
+authors = ["Ircuit contributors"]
+
+[workspace.dependencies]
+# ---- 内部 crate ----
+ircuit-proto = { path = "crates/ircuit-proto" }
+ircuit-client = { path = "crates/ircuit-client" }
+ircuit-state = { path = "crates/ircuit-state" }
+ircuit-encoding = { path = "crates/ircuit-encoding" }
+ircuit-storage = { path = "crates/ircuit-storage" }
+ircuit-dcc = { path = "crates/ircuit-dcc" }
+ircuit-plugin = { path = "crates/ircuit-plugin" }
+
+# ---- 外部 crate（版本集中管理，避免各 crate 之间漂移）----
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+thiserror = "2.0.21"
+tokio = { version = "1.53.1", features = [
+  "rt-multi-thread",
+  "macros",
+  "net",
+  "io-util",
+  "sync",
+  "time",
+  "signal",
+] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+
+# ---- Lint 基线：全工作区统一 ----
+[workspace.lints.rust]
+unsafe_code = "forbid"
+# 链接器会往 stdout 打印「正在创建库 …」之类的进度信息。这不是代码问题，
+# 但会被 -D warnings 当成错误，导致 CI 在 Windows 上假失败。
+linker_messages = "allow"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+# 依赖按优化级别编译：IRC 报文解析在 debug 下也要够快，
+# 同时应用自身代码保持快速增量编译。
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

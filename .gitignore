@@ -1,0 +1,23 @@
+# ---------- 构建产物 ----------
+/dist/
+/target/
+/src-tauri/target/
+/src-tauri/gen/
+node_modules/
+
+# ---------- 本机环境相关（含绝对路径，绝不入库） ----------
+/.cache/
+/.npmrc
+/.pnpm-store/
+
+# ---------- 编辑器 / 操作系统 ----------
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+
+# ---------- 日志与本地数据 ----------
+*.log
+pnpm-debug.log*

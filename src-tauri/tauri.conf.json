@@ -1,0 +1,43 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Ircuit",
+  "version": "0.1.0",
+  "identifier": "com.ircuit.desktop",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Ircuit",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 960,
+        "minHeight": 600,
+        "center": true,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost ws://localhost:1420 http://localhost:1420"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "SocialNetworking",
+    "shortDescription": "现代跨平台 IRC 客户端",
+    "longDescription": "Ircuit 是一个现代、简洁美观、功能完整的桌面 IRC 客户端：完整支持 IRCv3、DCC、本地历史检索与插件扩展。",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

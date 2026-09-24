@@ -1,0 +1,14 @@
+[package]
+name = "ircuit-dcc"
+description = "DCC CHAT and file transfer (SEND / RESUME / ACCEPT, passive mode)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[lints]
+workspace = true

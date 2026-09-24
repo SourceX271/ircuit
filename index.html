@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ircuit</title>
+    <script>
+      // 在 React 挂载之前解析并应用主题，避免深色用户看到一帧白屏。
+      (function () {
+        try {
+          var stored = localStorage.getItem('ircuit.theme');
+          var mode = stored === 'light' || stored === 'dark' ? stored : null;
+          if (!mode) {
+            mode = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          }
+          document.documentElement.classList.toggle('dark', mode === 'dark');
+        } catch (error) {
+          document.documentElement.classList.add('dark');
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

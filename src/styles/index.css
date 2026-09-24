@@ -1,0 +1,277 @@
+@import 'tailwindcss';
+
+/* Tailwind v4 默认把 dark: 绑定在 prefers-color-scheme 上。
+   Ircuit 提供「浅色 / 深色 / 跟随系统」三档，因此改为 class 策略。 */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ============================================================================
+   与主题无关的基础令牌：字体、圆角、动效
+   ========================================================================== */
+@theme {
+  --font-sans:
+    'Inter', 'Segoe UI Variable Text', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei UI',
+    'Hiragino Sans GB', system-ui, -apple-system, 'Noto Sans', sans-serif;
+  --font-mono:
+    'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ============================================================================
+   第一层：原始色板（primitive）
+   只描述「是什么颜色」，不含任何语义；主题切换不动这一层。
+   ========================================================================== */
+:root {
+  --ir-white: #ffffff;
+
+  --ir-slate-25: #f7f8fa;
+  --ir-slate-50: #f1f3f6;
+  --ir-slate-100: #e8ebef;
+  --ir-slate-200: #dde1e7;
+  --ir-slate-300: #c6ccd5;
+  --ir-slate-400: #9aa2b0;
+  --ir-slate-500: #6f7787;
+  --ir-slate-600: #545c6b;
+  --ir-slate-700: #3b424e;
+  --ir-slate-800: #252a33;
+  --ir-slate-850: #1c2027;
+  --ir-slate-900: #14171c;
+  --ir-slate-950: #0f1115;
+  --ir-slate-1000: #0a0c0f;
+
+  --ir-blue-300: #a8bcff;
+  --ir-blue-400: #7f9bff;
+  --ir-blue-500: #4f7cff;
+  --ir-blue-600: #3f6ae0;
+  --ir-blue-700: #2f52b8;
+
+  --ir-amber-400: #f0b429;
+  --ir-amber-600: #b4690e;
+  --ir-amber-500: #d98a12;
+
+  --ir-red-400: #f97066;
+  --ir-red-600: #d92d20;
+
+  --ir-green-400: #3ddc97;
+  --ir-green-600: #12805c;
+}
+
+/* ============================================================================
+   第二层：语义令牌（semantic）
+   描述「用在哪里」。浅色为默认值，深色在 .dark 中整体替换。
+   ========================================================================== */
+:root {
+  color-scheme: light;
+
+  --ir-bg-app: var(--ir-slate-25);
+  --ir-bg-surface: var(--ir-white);
+  --ir-bg-elevated: var(--ir-white);
+  --ir-bg-subtle: var(--ir-slate-50);
+
+  --ir-border: var(--ir-slate-200);
+  --ir-border-strong: var(--ir-slate-300);
+
+  --ir-text: var(--ir-slate-900);
+  --ir-text-muted: var(--ir-slate-600);
+  --ir-text-faint: var(--ir-slate-400);
+
+  --ir-accent: var(--ir-blue-600);
+  --ir-accent-hover: var(--ir-blue-700);
+  --ir-accent-alt: #7c3aed;
+  --ir-accent-soft: color-mix(in oklab, var(--ir-blue-500) 12%, transparent);
+  --ir-accent-ink: var(--ir-white);
+
+  --ir-highlight: var(--ir-amber-600);
+  --ir-highlight-soft: color-mix(in oklab, var(--ir-amber-400) 22%, transparent);
+  --ir-danger: var(--ir-red-600);
+  --ir-success: var(--ir-green-600);
+  --ir-warning: var(--ir-amber-600);
+
+  --ir-scrollbar-thumb: var(--ir-slate-300);
+  --ir-scrollbar-thumb-hover: var(--ir-slate-400);
+
+  /* 昵称配色：IRC 频道里同时出现多种颜色，需保证同一主题下彼此可区分且不刺眼 */
+  --ir-nick-0: #2f52b8;
+  --ir-nick-1: #0f766e;
+  --ir-nick-2: #a1421c;
+  --ir-nick-3: #7c3aed;
+  --ir-nick-4: #b91c6b;
+  --ir-nick-5: #0e7490;
+  --ir-nick-6: #4d7c0f;
+  --ir-nick-7: #9333ea;
+}
+
+.dark {
+  color-scheme: dark;
+
+  --ir-bg-app: var(--ir-slate-950);
+  --ir-bg-surface: var(--ir-slate-900);
+  --ir-bg-elevated: #191d24;
+  --ir-bg-subtle: #1f242c;
+
+  --ir-border: #262c36;
+  --ir-border-strong: #39414e;
+
+  --ir-text: #e7e9ee;
+  --ir-text-muted: #99a1b0;
+  --ir-text-faint: #6b7383;
+
+  --ir-accent: var(--ir-blue-500);
+  --ir-accent-hover: var(--ir-blue-400);
+  --ir-accent-alt: #8b5cf6;
+  --ir-accent-soft: color-mix(in oklab, var(--ir-blue-500) 20%, transparent);
+  --ir-accent-ink: var(--ir-slate-1000);
+
+  --ir-highlight: var(--ir-amber-400);
+  --ir-highlight-soft: color-mix(in oklab, var(--ir-amber-400) 18%, transparent);
+  --ir-danger: var(--ir-red-400);
+  --ir-success: var(--ir-green-400);
+  --ir-warning: var(--ir-amber-400);
+
+  --ir-scrollbar-thumb: #333a46;
+  --ir-scrollbar-thumb-hover: #454e5d;
+
+  --ir-nick-0: #8aa4ff;
+  --ir-nick-1: #4fd1c5;
+  --ir-nick-2: #f0a37a;
+  --ir-nick-3: #c4a6ff;
+  --ir-nick-4: #f79ac4;
+  --ir-nick-5: #6fd0e8;
+  --ir-nick-6: #b6d97a;
+  --ir-nick-7: #d9a9ff;
+}
+
+/* ============================================================================
+   第三层：组件令牌（component）
+   把「侧边栏背景」「消息悬停底色」这类具体用途命名出来，
+   组件里只引用这一层，将来换皮不必改组件。
+   ========================================================================== */
+:root {
+  --ir-sidebar-bg: var(--ir-bg-surface);
+  --ir-sidebar-item-hover: var(--ir-bg-subtle);
+  --ir-sidebar-item-active: var(--ir-accent-soft);
+  --ir-message-hover: color-mix(in oklab, var(--ir-bg-subtle) 70%, transparent);
+  --ir-composer-bg: var(--ir-bg-surface);
+  --ir-topicbar-bg: var(--ir-bg-surface);
+}
+
+.dark {
+  --ir-sidebar-bg: #11141a;
+  --ir-sidebar-item-hover: #1a1f27;
+  --ir-sidebar-item-active: var(--ir-accent-soft);
+  --ir-message-hover: color-mix(in oklab, var(--ir-bg-subtle) 45%, transparent);
+  --ir-composer-bg: var(--ir-bg-surface);
+  --ir-topicbar-bg: #11141a;
+}
+
+/* ============================================================================
+   把语义层与组件层暴露成 Tailwind 工具类
+   inline 关键字很关键：工具类引用 var(...) 而不是被内联成固定值，
+   因此切换 .dark 时所有颜色会立刻跟着变。
+   ========================================================================== */
+@theme inline {
+  --color-app: var(--ir-bg-app);
+  --color-surface: var(--ir-bg-surface);
+  --color-elevated: var(--ir-bg-elevated);
+  --color-subtle: var(--ir-bg-subtle);
+
+  --color-line: var(--ir-border);
+  --color-line-strong: var(--ir-border-strong);
+
+  --color-ink: var(--ir-text);
+  --color-muted: var(--ir-text-muted);
+  --color-faint: var(--ir-text-faint);
+
+  --color-accent: var(--ir-accent);
+  --color-accent-hover: var(--ir-accent-hover);
+  --color-accent-alt: var(--ir-accent-alt);
+  --color-accent-soft: var(--ir-accent-soft);
+  --color-accent-ink: var(--ir-accent-ink);
+
+  --color-highlight: var(--ir-highlight);
+  --color-highlight-soft: var(--ir-highlight-soft);
+  --color-danger: var(--ir-danger);
+  --color-success: var(--ir-success);
+  --color-warning: var(--ir-warning);
+
+  --color-sidebar: var(--ir-sidebar-bg);
+  --color-sidebar-hover: var(--ir-sidebar-item-hover);
+  --color-sidebar-active: var(--ir-sidebar-item-active);
+  --color-message-hover: var(--ir-message-hover);
+  --color-composer: var(--ir-composer-bg);
+  --color-topicbar: var(--ir-topicbar-bg);
+}
+
+/* ============================================================================
+   基础样式
+   ========================================================================== */
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    overflow: hidden;
+    background-color: var(--ir-bg-app);
+    color: var(--ir-text);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background: var(--ir-accent-soft);
+  }
+
+  /* 细而克制的滚动条：消息流很长，滚动条不该抢戏 */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--ir-scrollbar-thumb) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--ir-scrollbar-thumb);
+    background-clip: content-box;
+    border: 3px solid transparent;
+    border-radius: 999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--ir-scrollbar-thumb-hover);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ir-accent);
+    outline-offset: 1px;
+    border-radius: var(--radius-xs);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

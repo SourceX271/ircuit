@@ -1,0 +1,17 @@
+# Rust 由 rustfmt 负责，Prettier 不介入。
+crates/
+src-tauri/
+target/
+.cache/
+
+# 产物与锁文件
+dist/
+node_modules/
+pnpm-lock.yaml
+
+# 文档由人工维护排版，避免 Prettier 重排表格
+*.md
+docs/
+
+# 由 Rust 侧生成的 IPC 绑定，格式化会在每次生成后被覆盖
+src/lib/bindings.ts

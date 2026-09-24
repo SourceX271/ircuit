@@ -1,0 +1,15 @@
+[package]
+name = "ircuit-client"
+description = "IRC connection layer: transport, CAP negotiation, SASL, keepalive and reconnection"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+ircuit-proto = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[lints]
+workspace = true

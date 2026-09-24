@@ -1,0 +1,56 @@
+{
+  "name": "ircuit",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "现代、简洁美观、功能完整的跨平台桌面 IRC 客户端",
+  "license": "MIT OR Apache-2.0",
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"scripts/**/*.mjs\" \"*.{json,ts,html}\" \".github/workflows/*.yml\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"scripts/**/*.mjs\" \"*.{json,ts,html}\" \".github/workflows/*.yml\"",
+    "cargo:test": "node scripts/run-cargo.mjs test --workspace",
+    "cargo:clippy": "node scripts/run-cargo.mjs clippy --workspace --all-targets -- -D warnings",
+    "cargo:fmt": "node scripts/run-cargo.mjs fmt --all",
+    "cargo:fmt:check": "node scripts/run-cargo.mjs fmt --all -- --check",
+    "cargo:bindings": "node scripts/run-cargo.mjs run -p ircuit --bin export-bindings"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "class-variance-authority": "^0.7",
+    "clsx": "^2",
+    "i18next": "^26",
+    "lucide-react": "^1",
+    "react": "^19",
+    "react-dom": "^19",
+    "react-i18next": "^17",
+    "tailwind-merge": "^3",
+    "zustand": "^5"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4",
+    "@tauri-apps/cli": "^2",
+    "@testing-library/react": "^16",
+    "@types/node": "^24",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^6",
+    "jsdom": "^30",
+    "prettier": "^3",
+    "tailwindcss": "^4",
+    "typescript": "^5.9.3",
+    "vite": "^8",
+    "vitest": "^5"
+  }
+}
