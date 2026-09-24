@@ -32,6 +32,8 @@ function takeValue(flag, fallback) {
 const port = takeValue('--port', '6667');
 const flood = takeValue('--flood', '0');
 const sasl = takeValue('--sasl', null);
+const noEcho = args.includes('--no-echo');
+if (noEcho) args.splice(args.indexOf('--no-echo'), 1);
 
 if (args.length > 0) {
   console.error(`unknown option: ${args.join(' ')}`);
@@ -43,6 +45,12 @@ const env = {
   IRCUIT_TESTSERVER_PORT: String(port),
   IRCUIT_TESTSERVER_FLOOD: String(flood),
 };
+
+if (noEcho) {
+  // Withholding `echo-message` is how the client's local-echo path gets
+  // exercised by hand.
+  env.IRCUIT_TESTSERVER_NO_ECHO = '1';
+}
 
 if (sasl !== null) {
   const separator = sasl.indexOf(':');
@@ -59,6 +67,7 @@ if (sasl !== null) {
 console.log(`starting the mock IRC server on 127.0.0.1:${port}`);
 if (Number(flood) > 0) console.log(`  plus ${flood} filler messages after every join`);
 if (sasl !== null) console.log('  SASL required');
+if (noEcho) console.log('  echo-message withheld: the client must echo your own lines itself');
 
 const result = spawnSync(
   process.execPath,

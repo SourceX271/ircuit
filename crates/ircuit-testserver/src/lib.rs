@@ -97,6 +97,8 @@ pub struct TestServer {
     addr: SocketAddr,
     inner: Arc<Inner>,
     shutdown: watch::Sender<bool>,
+    /// What this instance advertises, kept for `capabilities()`.
+    capabilities: Vec<String>,
 }
 
 impl TestServer {
@@ -110,6 +112,9 @@ impl TestServer {
     pub async fn start_on(port: u16, config: ServerConfig) -> std::io::Result<Self> {
         let listener = TcpListener::bind(("127.0.0.1", port)).await?;
         let addr = listener.local_addr()?;
+
+        // Read before the accept loop takes ownership of the config.
+        let advertised = config.capabilities.clone();
 
         let (drop_signal, _) = watch::channel(false);
         let (shutdown, mut shutdown_rx) = watch::channel(false);
@@ -148,6 +153,7 @@ impl TestServer {
             addr,
             inner,
             shutdown,
+            capabilities: advertised,
         })
     }
 
@@ -176,6 +182,16 @@ impl TestServer {
     /// The channels the client joined.
     pub async fn channels(&self) -> Vec<String> {
         self.inner.shared.lock().await.channels.clone()
+    }
+
+    /// The capabilities this server advertises.
+    ///
+    /// Exposed so the standalone binary can print what it is actually offering
+    /// — with `IRCUIT_TESTSERVER_NO_ECHO` the list differs from the default, and
+    /// printing the default would be a lie.
+    #[must_use]
+    pub fn capabilities(&self) -> Vec<String> {
+        self.capabilities.clone()
     }
 
     /// Whether SASL succeeded, if it ran at all.

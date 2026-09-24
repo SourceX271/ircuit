@@ -17,6 +17,7 @@
     "tauri": "tauri",
     "mock": "node scripts/dev/mock-server.mjs",
     "mock:flood": "node scripts/dev/mock-server.mjs --flood 200",
+    "mock:no-echo": "node scripts/dev/mock-server.mjs --no-echo",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

@@ -37,7 +37,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         _ => None,
     };
 
+    let mut capabilities: Vec<String> = ircuit_testserver::DEFAULT_CAPABILITIES
+        .iter()
+        .map(|cap| (*cap).to_owned())
+        .collect();
+
+    // Withholding `echo-message` is how the client's local-echo path gets
+    // exercised by hand: without it the server sends nothing back for our own
+    // PRIVMSG, so the only thing on screen is what the client echoed itself.
+    if std::env::var("IRCUIT_TESTSERVER_NO_ECHO").is_ok() {
+        capabilities.retain(|cap| cap != "echo-message");
+    }
+
     let config = ServerConfig {
+        capabilities,
         require_sasl: std::env::var("IRCUIT_TESTSERVER_REQUIRE_SASL").is_ok(),
         credentials,
         flood: std::env::var("IRCUIT_TESTSERVER_FLOOD")
@@ -49,10 +62,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let server = TestServer::start_on(port, config).await?;
     info!("mock IRC server listening on {}", server.endpoint());
-    info!(
-        "capabilities: {}",
-        ircuit_testserver::DEFAULT_CAPABILITIES.join(" ")
-    );
+    info!("capabilities: {}", server.capabilities().join(" "));
 
     // Run until interrupted.
     loop {
