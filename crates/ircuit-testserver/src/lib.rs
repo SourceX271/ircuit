@@ -313,6 +313,9 @@ struct ServerSession {
     /// `(channel, topic)` in the order they were set.
     topics: Vec<(String, String)>,
     away: Option<String>,
+    /// Whether `echo-message` was negotiated, i.e. whether to echo the client's
+    /// own PRIVMSG and NOTICE back.
+    echo_message: bool,
     should_close: bool,
     rejected_a_nick: bool,
 }
@@ -328,6 +331,7 @@ impl ServerSession {
             channels: Vec::new(),
             topics: Vec::new(),
             away: None,
+            echo_message: false,
             should_close: false,
             rejected_a_nick: false,
         }
@@ -401,6 +405,22 @@ impl ServerSession {
             }
             "REQ" => {
                 let requested = tail.trim_start_matches(':');
+
+                // Track what was really granted. A real server only echoes a
+                // client's own PRIVMSG when `echo-message` was negotiated, and a
+                // mock that echoes unconditionally hides every bug that lives in
+                // the gap — which is exactly what it did until this was fixed.
+                for cap in requested.split_whitespace() {
+                    match cap.strip_prefix('-') {
+                        Some(removed) => self.echo_message &= removed != "echo-message",
+                        None => {
+                            if cap == "echo-message" {
+                                self.echo_message = true;
+                            }
+                        }
+                    }
+                }
+
                 vec![format!(":{SERVER_NAME} CAP * ACK :{requested}")]
             }
             "END" => {
@@ -510,17 +530,26 @@ impl ServerSession {
             None => return Vec::new(),
         };
 
+        if !self.echo_message {
+            return Vec::new();
+        }
+
         let nick = self.nick.clone().unwrap_or_else(|| "*".to_owned());
 
         vec![format!(":{nick}!user@host PRIVMSG {target} :{text}")]
     }
 
-    /// Echo a NOTICE back, the same way `echo-message` treats a PRIVMSG.
+    /// Echo a NOTICE back, but only when `echo-message` was negotiated — the
+    /// capability covers NOTICE as well as PRIVMSG.
     fn on_notice(&mut self, rest: &str) -> Vec<String> {
         let (target, text) = match rest.split_once(' ') {
             Some((target, text)) => (target, text.trim_start_matches(':')),
             None => return Vec::new(),
         };
+
+        if !self.echo_message {
+            return Vec::new();
+        }
 
         let nick = self.nick.clone().unwrap_or_else(|| "*".to_owned());
 
@@ -796,15 +825,44 @@ mod tests {
     fn privmsg_is_echoed_with_the_sender_prefix() {
         let mut session = session();
         session.nick = Some("alice".to_owned());
+        session.echo_message = true;
 
         let replies = session.handle("PRIVMSG #rust :hello world");
         assert_eq!(replies, vec![":alice!user@host PRIVMSG #rust :hello world"]);
+    }
+
+    /// The mirror of the test above: a server that never granted `echo-message`
+    /// sends nothing back, which is what makes the client's own local echo
+    /// necessary and testable.
+    #[test]
+    fn privmsg_is_not_echoed_without_the_capability() {
+        let mut session = session();
+        session.nick = Some("alice".to_owned());
+
+        assert!(session.handle("PRIVMSG #rust :hello world").is_empty());
+    }
+
+    /// Negotiating the capability is what turns echoing on — which is how a
+    /// client's `CAP REQ` gets to decide the behaviour.
+    #[test]
+    fn requesting_the_capability_enables_echoing() {
+        let mut granted = session();
+
+        granted.handle("CAP REQ :echo-message");
+        assert!(granted.echo_message);
+
+        // And dropping it turns echoing back off, as `CAP REQ :-cap` means.
+        let mut revoked = session();
+        revoked.handle("CAP REQ :echo-message");
+        revoked.handle("CAP REQ :-echo-message");
+        assert!(!revoked.echo_message);
     }
 
     #[test]
     fn tags_are_ignored_when_matching_the_verb() {
         let mut session = session();
         session.nick = Some("alice".to_owned());
+        session.echo_message = true;
 
         let replies = session.handle("@label=1 PRIVMSG #rust :hi");
         assert!(replies[0].contains("PRIVMSG #rust :hi"));

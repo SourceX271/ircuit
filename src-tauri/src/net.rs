@@ -516,6 +516,29 @@ async fn pump(
                     .apply_channel_state(&app, &network_id, &message, &mut self_nick)
                     .await;
             }
+
+            NetworkEvent::LocalEcho(message) => {
+                // Our own line, synthesized because the server does not echo it.
+                // It is deliberately not mirrored into the traffic view: the
+                // outbound line was already recorded when it was sent, and
+                // showing it twice would make the console lie about the wire.
+                if let Some(normalized) = view::normalize(Some(&self_nick), &message, now_seconds())
+                {
+                    let incoming = IncomingMessage {
+                        network_id: network_id.clone(),
+                        nick: normalized.nick,
+                        kind: convert_kind(normalized.kind),
+                        target: normalized.target,
+                        text: normalized.text,
+                        segments: convert_segments(&normalized.segments),
+                        timestamp: normalized.timestamp,
+                        is_self: normalized.is_self,
+                        seq: manager.next_seq(&network_id).await,
+                    };
+                    let _ = incoming.clone().emit(&app);
+                    manager.record_message(&network_id, incoming).await;
+                }
+            }
         }
     }
 

@@ -357,6 +357,111 @@ async fn a_sent_message_is_echoed_back() {
     server.shutdown().await;
 }
 
+/// A server that does not offer `echo-message` sends nothing back for our own
+/// PRIVMSG. Without a local echo the user's own words would never appear — a
+/// bug that an echoing mock server hides completely, which is why the mock now
+/// only echoes when the capability was actually negotiated.
+#[tokio::test]
+async fn our_own_message_appears_even_when_the_server_does_not_echo() {
+    let server = TestServer::start(ServerConfig {
+        // Deliberately without echo-message.
+        capabilities: vec!["message-tags".to_owned(), "server-time".to_owned()],
+        ..ServerConfig::default()
+    })
+    .await
+    .unwrap();
+
+    let (handle, mut events) = spawn(local(&server, "alice"), BackoffPolicy::immediate());
+
+    // Capabilities arrive before 001, so read them first: waiting for
+    // registration would discard them on the way past.
+    match wait_for(&mut events, |event| {
+        matches!(event, NetworkEvent::Capabilities { .. })
+    })
+    .await
+    {
+        Some(NetworkEvent::Capabilities { negotiated }) => {
+            assert!(
+                !negotiated.iter().any(|cap| cap == "echo-message"),
+                "the fixture was supposed to withhold echo-message, got {negotiated:?}"
+            );
+        }
+        other => panic!("no capability event: {other:?}"),
+    }
+
+    assert!(wait_for_registration(&mut events).await.is_some());
+
+    handle
+        .send(ClientCommand::Privmsg {
+            target: "#rust".to_owned(),
+            text: "does anyone see this".to_owned(),
+        })
+        .await
+        .unwrap();
+
+    let echoed = wait_for(&mut events, |event| {
+        matches!(
+            event,
+            NetworkEvent::LocalEcho(message)
+                if message.command == Command::Privmsg
+                    && message.param(1) == Some("does anyone see this")
+        )
+    })
+    .await;
+
+    assert!(
+        echoed.is_some(),
+        "with no echo-message the client must echo locally, or nothing shows"
+    );
+
+    // And the server must not have echoed it, so there is no duplicate to
+    // de-duplicate: exactly one of the two paths is ever active.
+    assert!(server
+        .wait_for_line(
+            |line| line == "PRIVMSG #rust :does anyone see this",
+            TIMEOUT
+        )
+        .await
+        .is_some());
+
+    let _ = handle.send(ClientCommand::Shutdown).await;
+    server.shutdown().await;
+}
+
+/// The mirror of the test above: when the capability *is* granted, the client
+/// must stay quiet and let the server's echo be the single source of truth.
+#[tokio::test]
+async fn no_local_echo_when_the_server_echoes_for_us() {
+    let server = TestServer::start(ServerConfig::default()).await.unwrap();
+    let (handle, mut events) = spawn(local(&server, "alice"), BackoffPolicy::immediate());
+    assert!(wait_for_registration(&mut events).await.is_some());
+
+    handle
+        .send(ClientCommand::Privmsg {
+            target: "#rust".to_owned(),
+            text: "only once please".to_owned(),
+        })
+        .await
+        .unwrap();
+
+    let echo = wait_for(&mut events, |event| match event {
+        NetworkEvent::LocalEcho(message) => message.param(1) == Some("only once please"),
+        NetworkEvent::Message(message) => {
+            message.command == Command::Privmsg && message.param(1) == Some("only once please")
+        }
+        _ => false,
+    })
+    .await;
+
+    assert!(
+        matches!(echo, Some(NetworkEvent::Message(_))),
+        "expected the server's echo, got {echo:?}"
+    );
+
+    let _ = handle.send(ClientCommand::Shutdown).await;
+    server.shutdown().await;
+}
+
 #[tokio::test]
 async fn a_taken_nickname_is_retried_automatically() {
     let server = TestServer::start(ServerConfig {

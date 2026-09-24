@@ -12,7 +12,7 @@ use tokio::sync::mpsc;
 use tokio::time::MissedTickBehavior;
 use tracing::{debug, info, warn};
 
-use ircuit_proto::{Command, Message};
+use ircuit_proto::{Command, Message, Prefix};
 
 use crate::cap::{CapNegotiator, SaslOutcome};
 use crate::config::ConnectionConfig;
@@ -97,6 +97,13 @@ pub enum NetworkEvent {
     Registered { nick: String, welcome: String },
     /// Every inbound protocol message, in order.
     Message(Box<Message>),
+    /// A conversation line we sent ourselves, echoed locally.
+    ///
+    /// Only produced when the server did **not** grant `echo-message`, in which
+    /// case nothing would otherwise come back and the user's own words would
+    /// never appear. Exactly one of the two paths is ever active, which is why
+    /// there is no de-duplication to do.
+    LocalEcho(Box<Message>),
     /// Capabilities the server granted.
     Capabilities { negotiated: Vec<String> },
     /// The connection ended. `retrying` says whether another attempt follows.
@@ -302,9 +309,22 @@ async fn run_session(
                     return SessionEnd::Stopped;
                 }
                 Some(command) => {
-                    for line in command_to_lines(&command) {
-                        if let Err(error) = transport::write_line(&mut writer, &line).await {
+                    let lines = command_to_lines(&command);
+
+                    for line in &lines {
+                        if let Err(error) = transport::write_line(&mut writer, line).await {
                             return SessionEnd::Failed(error);
+                        }
+                    }
+
+                    // Without `echo-message` the server sends nothing back for our
+                    // own PRIVMSG, so the message the user just typed would simply
+                    // never appear. When the capability *is* granted the server's
+                    // echo is authoritative, and echoing locally as well would
+                    // duplicate every line.
+                    if !cap.has("echo-message") {
+                        for message in local_echoes(&lines, &state.nick) {
+                            let _ = events.send(NetworkEvent::LocalEcho(Box::new(message))).await;
                         }
                     }
                 }
@@ -542,6 +562,38 @@ pub fn command_to_lines(command: &ClientCommand) -> Vec<String> {
         }
         ClientCommand::Shutdown => Vec::new(),
     }
+}
+
+/// Build the local echo for the lines we are about to send.
+///
+/// The echoes are derived by parsing the very lines that go on the wire rather
+/// than by rebuilding them from the command. That matters for two reasons: a
+/// long message is split into several `PRIVMSG`s and each one has to appear, and
+/// `/me` is a CTCP-framed `PRIVMSG` whose framing is what makes the UI render it
+/// as an action. Rebuilding from the command would have to reproduce both rules,
+/// and would drift the first time either changed.
+///
+/// Only conversation lines are echoed. A `MODE`, a `JOIN` or a `WHOIS` produces
+/// its own visible result, and inventing a chat line for one would be noise.
+fn local_echoes(lines: &[String], nick: &str) -> Vec<Message> {
+    lines
+        .iter()
+        .filter_map(|line| {
+            let mut message = Message::parse(line).ok()?;
+            if !matches!(message.command, Command::Privmsg | Command::Notice) {
+                return None;
+            }
+
+            // Attributed to us, so the normalizer marks it as our own line.
+            message.prefix = Some(Prefix {
+                nick: Some(nick.to_owned()),
+                user: None,
+                host: None,
+            });
+
+            Some(message)
+        })
+        .collect()
 }
 
 fn split_to_messages(command: Command, target: &str, text: &str) -> Vec<String> {
@@ -787,5 +839,91 @@ mod tests {
         let first = clock_seed();
         std::thread::sleep(Duration::from_millis(2));
         assert_ne!(first, clock_seed());
+    }
+
+    #[test]
+    fn a_sent_message_is_echoed_under_our_own_nickname() {
+        let lines = command_to_lines(&ClientCommand::Privmsg {
+            target: "#rust".to_owned(),
+            text: "hello".to_owned(),
+        });
+
+        let echoes = local_echoes(&lines, "alice");
+
+        assert_eq!(echoes.len(), 1);
+        assert_eq!(echoes[0].command, Command::Privmsg);
+        assert_eq!(echoes[0].param(0), Some("#rust"));
+        assert_eq!(echoes[0].param(1), Some("hello"));
+        // Attributed to us, which is what makes the normalizer mark it as our
+        // own line rather than someone else's.
+        assert_eq!(echoes[0].nick(), Some("alice"));
+    }
+
+    #[test]
+    fn a_notice_is_echoed_too() {
+        let lines = command_to_lines(&ClientCommand::Notice {
+            target: "bob".to_owned(),
+            text: "psst".to_owned(),
+        });
+
+        let echoes = local_echoes(&lines, "alice");
+
+        assert_eq!(echoes.len(), 1);
+        assert_eq!(echoes[0].command, Command::Notice);
+    }
+
+    #[test]
+    fn a_long_message_produces_one_echo_per_line() {
+        let lines = command_to_lines(&ClientCommand::Privmsg {
+            target: "#rust".to_owned(),
+            text: "x".repeat(ircuit_proto::MAX_LINE_BYTES * 2),
+        });
+        assert!(lines.len() > 1, "the fixture should have split the message");
+
+        let echoes = local_echoes(&lines, "alice");
+
+        // Rebuilding the echo from the command would have produced one line for
+        // a message the user sees as several.
+        assert_eq!(echoes.len(), lines.len());
+    }
+
+    #[test]
+    fn an_action_keeps_its_ctcp_framing() {
+        let lines = command_to_lines(&ClientCommand::Privmsg {
+            target: "#rust".to_owned(),
+            text: "\u{0001}ACTION waves\u{0001}".to_owned(),
+        });
+
+        let echoes = local_echoes(&lines, "alice");
+
+        // The framing is what tells the UI to render this as an action rather
+        // than as a plain message.
+        assert_eq!(echoes.len(), 1);
+        assert_eq!(echoes[0].param(1), Some("\u{0001}ACTION waves\u{0001}"));
+    }
+
+    #[test]
+    fn commands_with_their_own_visible_result_are_not_echoed() {
+        for command in [
+            ClientCommand::Join("#rust".to_owned()),
+            ClientCommand::Nick("bob".to_owned()),
+            ClientCommand::Whois("alice".to_owned()),
+            ClientCommand::Mode {
+                target: "#rust".to_owned(),
+                modes: "+m".to_owned(),
+                args: Vec::new(),
+            },
+            ClientCommand::Topic {
+                channel: "#rust".to_owned(),
+                topic: Some("hi".to_owned()),
+            },
+            ClientCommand::Raw("PING :x".to_owned()),
+        ] {
+            let lines = command_to_lines(&command);
+            assert!(
+                local_echoes(&lines, "alice").is_empty(),
+                "{command:?} should not invent a chat line"
+            );
+        }
     }
 }
