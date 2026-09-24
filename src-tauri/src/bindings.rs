@@ -27,6 +27,10 @@ pub fn builder() -> Builder<tauri::Wry> {
             crate::commands::join_channel,
             crate::commands::send_raw_command,
             crate::commands::open_external,
+            crate::commands::whois,
+            crate::commands::set_member_mode,
+            crate::commands::kick_user,
+            crate::commands::ban_user,
         ])
         .events(collect_events![
             crate::events::CoreStatus,

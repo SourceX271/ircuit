@@ -207,3 +207,99 @@ pub async fn send_raw_command(
         .send(&app, &network_id, ClientCommand::Raw(line))
         .await
 }
+
+/// Ask the server about a nickname.
+#[tauri::command]
+#[specta::specta]
+pub async fn whois(
+    app: AppHandle,
+    manager: State<'_, Arc<NetworkManager>>,
+    network_id: String,
+    nick: String,
+) -> Result<(), String> {
+    manager
+        .inner()
+        .send(&app, &network_id, ClientCommand::Whois(nick))
+        .await
+}
+
+/// Grant or revoke a channel privilege, e.g. `+o` / `-v`.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_member_mode(
+    app: AppHandle,
+    manager: State<'_, Arc<NetworkManager>>,
+    network_id: String,
+    channel: String,
+    nick: String,
+    mode: String,
+    grant: bool,
+) -> Result<(), String> {
+    let modes = format!("{}{}", if grant { '+' } else { '-' }, mode);
+
+    manager
+        .inner()
+        .send(
+            &app,
+            &network_id,
+            ClientCommand::Mode {
+                target: channel,
+                modes,
+                args: vec![nick],
+            },
+        )
+        .await
+}
+
+/// Remove someone from a channel.
+#[tauri::command]
+#[specta::specta]
+pub async fn kick_user(
+    app: AppHandle,
+    manager: State<'_, Arc<NetworkManager>>,
+    network_id: String,
+    channel: String,
+    nick: String,
+    reason: Option<String>,
+) -> Result<(), String> {
+    manager
+        .inner()
+        .send(
+            &app,
+            &network_id,
+            ClientCommand::Kick {
+                channel,
+                nick,
+                reason,
+            },
+        )
+        .await
+}
+
+/// Ban someone from a channel.
+///
+/// The mask bans the nickname on any user and host. A tighter ban needs the
+/// user's host, which means a `WHOIS` round trip — offered later, not guessed at
+/// here.
+#[tauri::command]
+#[specta::specta]
+pub async fn ban_user(
+    app: AppHandle,
+    manager: State<'_, Arc<NetworkManager>>,
+    network_id: String,
+    channel: String,
+    nick: String,
+) -> Result<(), String> {
+    manager
+        .inner()
+        .send(
+            &app,
+            &network_id,
+            ClientCommand::Mode {
+                target: channel,
+                modes: "+b".to_owned(),
+                args: vec![format!("{nick}!*@*")],
+            },
+        )
+        .await
+}

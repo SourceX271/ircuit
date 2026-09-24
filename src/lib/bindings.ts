@@ -39,6 +39,20 @@ export const commands = {
 	 *  real attack. See [`crate::opener`].
 	 */
 	openExternal: (url: string) => typedError<null, string>(__TAURI_INVOKE("open_external", { url })),
+	/**  Ask the server about a nickname. */
+	whois: (networkId: string, nick: string) => typedError<null, string>(__TAURI_INVOKE("whois", { networkId, nick })),
+	/**  Grant or revoke a channel privilege, e.g. `+o` / `-v`. */
+	setMemberMode: (networkId: string, channel: string, nick: string, mode: string, grant: boolean) => typedError<null, string>(__TAURI_INVOKE("set_member_mode", { networkId, channel, nick, mode, grant })),
+	/**  Remove someone from a channel. */
+	kickUser: (networkId: string, channel: string, nick: string, reason: string | null) => typedError<null, string>(__TAURI_INVOKE("kick_user", { networkId, channel, nick, reason })),
+	/**
+	 *  Ban someone from a channel.
+	 * 
+	 *  The mask bans the nickname on any user and host. A tighter ban needs the
+	 *  user's host, which means a `WHOIS` round trip — offered later, not guessed at
+	 *  here.
+	 */
+	banUser: (networkId: string, channel: string, nick: string) => typedError<null, string>(__TAURI_INVOKE("ban_user", { networkId, channel, nick })),
 };
 
 /** Events */

@@ -48,6 +48,20 @@ pub enum ClientCommand {
         reason: Option<String>,
     },
     Nick(String),
+    /// Set channel modes, e.g. `MODE #rust +o alice`.
+    Mode {
+        target: String,
+        modes: String,
+        args: Vec<String>,
+    },
+    /// Remove someone from a channel.
+    Kick {
+        channel: String,
+        nick: String,
+        reason: Option<String>,
+    },
+    /// Ask the server about someone.
+    Whois(String),
     /// Send a raw protocol line. Intended for the command console.
     Raw(String),
     /// Close the connection and do not reconnect.
@@ -459,6 +473,31 @@ pub fn command_to_lines(command: &ClientCommand) -> Vec<String> {
             None => vec![Message::new(Command::Part, [channel.clone()]).to_wire()],
         },
         ClientCommand::Nick(nick) => vec![Message::new(Command::Nick, [nick.clone()]).to_wire()],
+        ClientCommand::Mode {
+            target,
+            modes,
+            args,
+        } => {
+            let params = std::iter::once(target.clone())
+                .chain(std::iter::once(modes.clone()))
+                .chain(args.iter().cloned())
+                .collect::<Vec<_>>();
+
+            vec![Message::new(Command::Mode, params).to_wire()]
+        }
+        ClientCommand::Kick {
+            channel,
+            nick,
+            reason,
+        } => {
+            let params = match reason {
+                Some(reason) => vec![channel.clone(), nick.clone(), reason.clone()],
+                None => vec![channel.clone(), nick.clone()],
+            };
+
+            vec![Message::new(Command::Kick, params).to_wire()]
+        }
+        ClientCommand::Whois(nick) => vec![Message::new(Command::Whois, [nick.clone()]).to_wire()],
         ClientCommand::Raw(line) => {
             // Strip framing characters so a raw line cannot become two commands.
             let cleaned: String = line.chars().filter(|c| *c != '\r' && *c != '\n').collect();
@@ -537,6 +576,74 @@ mod tests {
             reason: Some("bye now".to_owned()),
         });
         assert_eq!(with_reason, vec!["PART #rust :bye now"]);
+    }
+
+    #[test]
+    fn mode_changes_keep_their_arguments_in_order() {
+        let lines = command_to_lines(&ClientCommand::Mode {
+            target: "#rust".to_owned(),
+            modes: "+ov".to_owned(),
+            args: vec!["alice".to_owned(), "bob".to_owned()],
+        });
+
+        assert_eq!(lines, vec!["MODE #rust +ov alice bob"]);
+    }
+
+    #[test]
+    fn a_mode_without_arguments_has_no_trailing_colon() {
+        let lines = command_to_lines(&ClientCommand::Mode {
+            target: "#rust".to_owned(),
+            modes: "+m".to_owned(),
+            args: Vec::new(),
+        });
+
+        assert_eq!(lines, vec!["MODE #rust +m"]);
+    }
+
+    #[test]
+    fn kick_includes_the_reason_only_when_given() {
+        let without = command_to_lines(&ClientCommand::Kick {
+            channel: "#rust".to_owned(),
+            nick: "alice".to_owned(),
+            reason: None,
+        });
+        assert_eq!(without, vec!["KICK #rust alice"]);
+
+        // A single-word reason needs no colon sigil; the wire form stays minimal.
+        let single = command_to_lines(&ClientCommand::Kick {
+            channel: "#rust".to_owned(),
+            nick: "alice".to_owned(),
+            reason: Some("spamming".to_owned()),
+        });
+        assert_eq!(single, vec!["KICK #rust alice spamming"]);
+
+        // A reason with spaces does need it.
+        let with = command_to_lines(&ClientCommand::Kick {
+            channel: "#rust".to_owned(),
+            nick: "alice".to_owned(),
+            reason: Some("please stop".to_owned()),
+        });
+        assert_eq!(with, vec!["KICK #rust alice :please stop"]);
+    }
+
+    #[test]
+    fn whois_names_its_target() {
+        assert_eq!(
+            command_to_lines(&ClientCommand::Whois("alice".to_owned())),
+            vec!["WHOIS alice"]
+        );
+    }
+
+    #[test]
+    fn a_malicious_nick_cannot_inject_a_command() {
+        // Nicknames reach these commands from a channel's member list, which
+        // means they come from the server, which means they come from whoever
+        // registered them.
+        let lines = command_to_lines(&ClientCommand::Whois("alice\r\nJOIN #evil".to_owned()));
+
+        assert_eq!(lines.len(), 1);
+        assert!(!lines[0].contains('\r'));
+        assert!(!lines[0].contains('\n'));
     }
 
     #[test]

@@ -75,6 +75,18 @@ export const en: TranslationSchema = {
       op: 'Operator',
       voice: 'Voice',
     },
+    actions: {
+      whois: 'Whois',
+      query: 'Open a conversation',
+      op: 'Give operator (+o)',
+      deop: 'Remove operator (-o)',
+      voice: 'Give voice (+v)',
+      devoice: 'Remove voice (-v)',
+      kick: 'Kick from channel',
+      ban: 'Ban',
+      ignore: 'Ignore',
+      unignore: 'Stop ignoring',
+    },
   },
 
   composer: {

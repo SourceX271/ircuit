@@ -76,6 +76,18 @@ export const zhCN = {
       op: '操作员',
       voice: '语音',
     },
+    actions: {
+      whois: '查询信息（WHOIS）',
+      query: '私聊',
+      op: '设为操作员（+o）',
+      deop: '取消操作员（-o）',
+      voice: '授予语音（+v）',
+      devoice: '取消语音（-v）',
+      kick: '踢出频道',
+      ban: '封禁',
+      ignore: '忽略此人',
+      unignore: '取消忽略',
+    },
   },
 
   composer: {

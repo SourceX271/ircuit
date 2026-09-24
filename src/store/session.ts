@@ -125,8 +125,10 @@ function kindForTarget(target: string): BufferKind {
   return isChannelName(target) ? 'channel' : 'query';
 }
 
-/** Whether the text mentions `nick` as a word-ish token. */
-export function mentions(text: string, nick: string | null): boolean {
+/** Whether the text mentions `nick` as a word-ish token. */ export function mentions(
+  text: string,
+  nick: string | null,
+): boolean {
   if (!nick) return false;
 
   const haystack = text.toLowerCase();
@@ -181,6 +183,14 @@ export interface SessionState {
    * subtly wrong — an older snapshot simply loses to a newer one.
    */
   channels: Record<string, ChannelSnapshot>;
+  /**
+   * Nicknames hidden from this client, per network.
+   *
+   * Filtering here rather than in the renderer means an ignored user's lines
+   * never reach unread counts or (later) notifications either — hiding them only
+   * at the last moment would still let them make noise.
+   */
+  ignored: Record<string, string[]>;
 
   setNetworks: (networks: NetworkSummary[]) => void;
   applyNetworkStatus: (status: NetworkStatus) => void;
@@ -189,6 +199,9 @@ export interface SessionState {
   applyChannelSnapshot: (snapshot: ChannelSnapshot) => void;
   applyChannelClosed: (closed: ChannelClosed) => void;
   selectBuffer: (id: string) => void;
+  /** Open a private conversation with `nick`, creating the buffer if needed. */
+  openQuery: (networkId: string, nick: string) => void;
+  toggleIgnored: (networkId: string, nick: string) => void;
   removeNetwork: (networkId: string) => void;
 }
 
@@ -200,6 +213,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   activeBufferId: null,
   lastSeq: {},
   channels: {},
+  ignored: {},
 
   setNetworks: (networks) => {
     set((state) => {
@@ -251,6 +265,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     const state = get();
     const network = state.networks.find((candidate) => candidate.id === message.network_id);
     const selfNick = network?.nick ?? null;
+
+    // An ignored user's lines never enter the store at all: filtering them in
+    // the renderer would still let them bump unread counts and, later,
+    // notifications.
+    if (!message.is_self && isIgnored(state.ignored[message.network_id] ?? [], message.nick)) {
+      return;
+    }
 
     const target = resolveBufferTarget(message, selfNick);
     const id = bufferId(message.network_id, target);
@@ -338,6 +359,31 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }));
   },
 
+  openQuery: (networkId, nick) => {
+    set((state) => {
+      const buffers = [...state.buffers];
+      const index = ensureBufferIndex(buffers, networkId, nick);
+
+      const buffer: SessionBuffer = { ...buffers[index], unread: 0, highlight: false, seen: true };
+      buffers[index] = buffer;
+
+      return { buffers, activeBufferId: buffer.id };
+    });
+  },
+
+  toggleIgnored: (networkId, nick) => {
+    set((state) => {
+      const current = state.ignored[networkId] ?? [];
+      const folded = foldNick(nick);
+
+      const next = current.includes(folded)
+        ? current.filter((entry) => entry !== folded)
+        : [...current, folded];
+
+      return { ignored: { ...state.ignored, [networkId]: next } };
+    });
+  },
+
   applyChannelSnapshot: (snapshot) => {
     set((state) => {
       const id = bufferId(snapshot.network_id, snapshot.name);
@@ -386,6 +432,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         if (parseBufferId(id).networkId !== networkId) channels[id] = value;
       }
 
+      const ignored = { ...state.ignored };
+      delete ignored[networkId];
+
       const activeStillExists = buffers.some((buffer) => buffer.id === state.activeBufferId);
 
       return {
@@ -395,15 +444,31 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         traffic,
         lastSeq,
         channels,
+        ignored,
         activeBufferId: activeStillExists ? state.activeBufferId : (buffers[0]?.id ?? null),
       };
     });
   },
 }));
 
-/**
- * Index of the buffer for `(networkId, target)`, creating it if needed.
+/** Fold a nickname for comparison.
  *
+ * Approximates rfc1459 case mapping with plain lowercasing: the exact rules
+ * depend on the server's `CASEMAPPING`, which the backend applies when it builds
+ * channel state. Ignoring is a local convenience, so an approximation is fine —
+ * but it must at least be consistent with itself.
+ */
+function foldNick(nick: string): string {
+  return nick.toLowerCase();
+}
+
+/** Whether `nick` is on an ignore list. */
+export function isIgnored(ignored: readonly string[], nick: string): boolean {
+  return ignored.includes(foldNick(nick));
+}
+
+/**
+ * Index of the buffer for `(networkId, target)`, creating it if needed. *
  * Returns an index rather than a reference on purpose: handing back the object
  * that lives in the state array invites mutating it in place, which would edit
  * the previous state behind the store's back.

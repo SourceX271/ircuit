@@ -161,3 +161,34 @@ export function listChannels(networkId: string): Promise<ChannelSnapshot[]> {
 export async function openExternal(url: string): Promise<void> {
   await unwrap(commands.openExternal(url));
 }
+
+/** 向服务器查询某个昵称。 */
+export async function whois(networkId: string, nick: string): Promise<void> {
+  await unwrap(commands.whois(networkId, nick));
+}
+
+/** 授予或撤销频道权限，例如 `+o` / `-v`。 */
+export async function setMemberMode(
+  networkId: string,
+  channel: string,
+  nick: string,
+  mode: string,
+  grant: boolean,
+): Promise<void> {
+  await unwrap(commands.setMemberMode(networkId, channel, nick, mode, grant));
+}
+
+/** 把某人踢出频道。 */
+export async function kickUser(
+  networkId: string,
+  channel: string,
+  nick: string,
+  reason: string | null,
+): Promise<void> {
+  await unwrap(commands.kickUser(networkId, channel, nick, reason));
+}
+
+/** 封禁某人（按昵称掩码）。 */
+export async function banUser(networkId: string, channel: string, nick: string): Promise<void> {
+  await unwrap(commands.banUser(networkId, channel, nick));
+}
