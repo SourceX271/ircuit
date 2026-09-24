@@ -151,3 +151,13 @@ export function onChannelClosed(handler: (closed: ChannelClosed) => void): Promi
 export function listChannels(networkId: string): Promise<ChannelSnapshot[]> {
   return unwrap(commands.listChannels(networkId));
 }
+
+/**
+ * 用系统默认浏览器打开一个链接。
+ *
+ * 后端会先做协议白名单校验；`file://` 与 `javascript:` 这类链接来自不可信
+ * 消息，绝不能交给系统打开器。
+ */
+export async function openExternal(url: string): Promise<void> {
+  await unwrap(commands.openExternal(url));
+}

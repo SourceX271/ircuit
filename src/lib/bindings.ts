@@ -31,6 +31,14 @@ export const commands = {
 	joinChannel: (networkId: string, channel: string) => typedError<null, string>(__TAURI_INVOKE("join_channel", { networkId, channel })),
 	/**  Send a raw protocol line, for the command console. */
 	sendRawCommand: (networkId: string, line: string) => typedError<null, string>(__TAURI_INVOKE("send_raw_command", { networkId, line })),
+	/**
+	 *  Open a URL from a message in the user's browser.
+	 * 
+	 *  The URL is validated against a scheme allowlist first: links arrive from
+	 *  strangers, and handing `file://` or `javascript:` to the system opener is a
+	 *  real attack. See [`crate::opener`].
+	 */
+	openExternal: (url: string) => typedError<null, string>(__TAURI_INVOKE("open_external", { url })),
 };
 
 /** Events */

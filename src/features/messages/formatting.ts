@@ -126,7 +126,7 @@ export function isPlainMessage(segments: readonly MessageSegment[]): boolean {
   return segments.every((segment) => isPlainStyle(segment.style));
 }
 
-function isPlainStyle(style: MessageStyle): boolean {
+export function isPlainStyle(style: MessageStyle): boolean {
   return (
     !style.bold &&
     !style.italic &&

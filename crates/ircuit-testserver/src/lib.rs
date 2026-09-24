@@ -424,20 +424,25 @@ impl ServerSession {
         let nick = self.nick.clone().unwrap_or_else(|| "*".to_owned());
 
         // The greeting is not decoration: it gives a manual tester (or a visual
-        // check) something to look at without needing a second client. The NAMES
-        // burst carries prefixes so the member list has something to render, and
-        // one line carries mIRC formatting so the renderer has something to
-        // style.
+        // check) something to look at without needing a second client. Between
+        // them these lines cover member prefixes, message grouping, mIRC
+        // formatting and link detection.
         vec![
             format!(":{nick}!user@host JOIN {channel}"),
             format!(":{SERVER_NAME} 353 {nick} = {channel} :@{nick} alice +bob carol"),
             format!(":{SERVER_NAME} 366 {nick} {channel} :End of /NAMES list."),
             format!(":alice!alice@host PRIVMSG {channel} :Welcome to {channel}, {nick}!"),
-            format!(":bob!bob@host PRIVMSG {channel} :hi {nick}, this is a mock server"),
+            format!(":bob!bob@host PRIVMSG {channel} :this is a mock server"),
+            format!(":bob!bob@host PRIVMSG {channel} :sent twice in a row, so it should group"),
             format!(
                 ":carol!carol@host PRIVMSG {channel} :\u{0002}bold\u{0002}, \
                  \u{001D}italic\u{001D}, \u{001F}underlined\u{001F}, \
                  \u{0003}04red\u{0003} and \u{0003}09green\u{0003}"
+            ),
+            format!(":carol!carol@host PRIVMSG {channel} :spec is at https://ircv3.net/irc/"),
+            format!(
+                ":alice!alice@host PRIVMSG {channel} :history: \
+                 https://en.wikipedia.org/wiki/IRC_(Internet_Relay_Chat), and www.irc.org"
             ),
         ]
     }

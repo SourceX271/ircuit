@@ -8,6 +8,7 @@ pub mod commands;
 pub mod events;
 pub mod logging;
 pub mod net;
+pub mod opener;
 
 /// 启动桌面应用。
 pub fn run() {

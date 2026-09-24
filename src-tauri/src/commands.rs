@@ -181,6 +181,18 @@ pub async fn join_channel(
         .await
 }
 
+/// Open a URL from a message in the user's browser.
+///
+/// The URL is validated against a scheme allowlist first: links arrive from
+/// strangers, and handing `file://` or `javascript:` to the system opener is a
+/// real attack. See [`crate::opener`].
+#[tauri::command]
+#[specta::specta]
+pub fn open_external(url: String) -> Result<(), String> {
+    let url = crate::opener::validate_external_url(&url)?;
+    crate::opener::launch(url).map_err(|error| error.to_string())
+}
+
 /// Send a raw protocol line, for the command console.
 #[tauri::command]
 #[specta::specta]
