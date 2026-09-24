@@ -315,31 +315,84 @@ async fn shutdown_says_goodbye_and_stops_the_driver() {
 /// ```text
 /// cargo test -p ircuit-client --test registration -- --ignored --nocapture
 /// ```
+///
+/// It defaults to OFTC, which accepts unauthenticated connections, and prints
+/// every lifecycle event so a failure is diagnosable from the log alone.
+///
+/// Override with environment variables:
+///
+/// - `IRCUIT_TEST_SERVER` — defaults to `irc.oftc.net`
+/// - `IRCUIT_TEST_NICK` — defaults to a process-unique name
+/// - `IRCUIT_TEST_SASL_ACCOUNT` / `IRCUIT_TEST_SASL_PASSWORD` — needed by
+///   networks such as Libera.Chat, which refuses registration from many hosting
+///   ranges unless the client authenticates.
 #[tokio::test]
 #[ignore = "requires outbound internet access"]
 async fn registers_with_a_real_network_over_tls() {
-    let nick = format!("ircuit{}", std::process::id() % 100_000);
-    let mut config = ConnectionConfig::new("irc.libera.chat", &nick);
+    let server = std::env::var("IRCUIT_TEST_SERVER").unwrap_or_else(|_| "irc.oftc.net".to_owned());
+    let nick = std::env::var("IRCUIT_TEST_NICK")
+        .unwrap_or_else(|_| format!("ircuit{}", std::process::id() % 100_000));
+
+    let mut config = ConnectionConfig::new(&server, &nick);
     config.realname = "Ircuit integration test".to_owned();
 
+    if let (Ok(account), Ok(password)) = (
+        std::env::var("IRCUIT_TEST_SASL_ACCOUNT"),
+        std::env::var("IRCUIT_TEST_SASL_PASSWORD"),
+    ) {
+        config.sasl = Some(ircuit_client::SaslConfig::Plain { account, password });
+    }
+
+    println!("connecting to {server} as {nick}");
     let (handle, mut events) = spawn(config, BackoffPolicy::immediate());
 
-    let registered = wait_for_registration(&mut events).await;
-    println!("registered as {registered:?}");
-
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(45);
+    let mut registered = None;
     let mut capabilities = Vec::new();
-    while let Some(event) = events.recv().await {
-        if let NetworkEvent::Capabilities { negotiated } = &event {
-            capabilities.clone_from(negotiated);
+    let mut failures = Vec::new();
+
+    while tokio::time::Instant::now() < deadline {
+        match tokio::time::timeout(Duration::from_secs(5), events.recv()).await {
+            Ok(Some(NetworkEvent::Registered { nick, welcome })) => {
+                println!("registered as {nick}: {welcome}");
+                registered = Some(nick);
+            }
+            Ok(Some(NetworkEvent::Capabilities { negotiated })) => {
+                println!("capabilities: {negotiated:?}");
+                capabilities = negotiated;
+            }
+            Ok(Some(NetworkEvent::Disconnected { reason, retrying })) => {
+                println!("disconnected (retrying={retrying}): {reason}");
+                failures.push(reason);
+            }
+            // Raw messages are far too noisy to print in full.
+            Ok(Some(NetworkEvent::Message(_))) => {}
+            Ok(Some(event)) => println!("{event:?}"),
+            Ok(None) => {
+                println!("event stream closed");
+                break;
+            }
+            Err(_) => println!("(no event for 5s)"),
+        }
+
+        if registered.is_some() && !capabilities.is_empty() {
             break;
         }
     }
+
     println!("negotiated capabilities: {capabilities:?}");
 
-    assert!(registered.is_some(), "never registered with Libera.Chat");
     assert!(
-        capabilities.iter().any(|cap| cap == "server-time"),
-        "expected server-time to be negotiated"
+        registered.is_some(),
+        "never registered with {server}; failures: {failures:?}"
+    );
+
+    // Which capabilities a network offers varies wildly — OFTC advertises only
+    // `multi-prefix`, Libera advertises a dozen — so assert that negotiation
+    // happened at all rather than pinning a specific capability.
+    assert!(
+        !capabilities.is_empty(),
+        "capability negotiation produced nothing; failures: {failures:?}"
     );
 
     let _ = handle.send(ClientCommand::Shutdown).await;

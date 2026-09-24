@@ -18,8 +18,20 @@ pub fn builder() -> Builder<tauri::Wry> {
         .commands(collect_commands![
             crate::commands::get_app_info,
             crate::commands::list_core_modules,
+            crate::commands::connect_network,
+            crate::commands::disconnect_network,
+            crate::commands::list_networks,
+            crate::commands::get_network_backlog,
+            crate::commands::send_message,
+            crate::commands::join_channel,
+            crate::commands::send_raw_command,
         ])
-        .events(collect_events![crate::events::CoreStatus])
+        .events(collect_events![
+            crate::events::CoreStatus,
+            crate::events::NetworkStatus,
+            crate::events::IncomingMessage,
+            crate::events::RawTraffic,
+        ])
 }
 
 /// TypeScript 绑定的输出路径（绝对路径，与调用时的当前目录无关）。

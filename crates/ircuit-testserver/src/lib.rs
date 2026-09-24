@@ -90,9 +90,15 @@ pub struct TestServer {
 }
 
 impl TestServer {
-    /// Bind and start accepting connections.
+    /// Bind an ephemeral loopback port and start accepting connections.
     pub async fn start(config: ServerConfig) -> std::io::Result<Self> {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
+        Self::start_on(0, config).await
+    }
+
+    /// Bind a specific port. Useful for manual testing, where the client has to
+    /// be told the address in advance.
+    pub async fn start_on(port: u16, config: ServerConfig) -> std::io::Result<Self> {
+        let listener = TcpListener::bind(("127.0.0.1", port)).await?;
         let addr = listener.local_addr()?;
 
         let (drop_signal, _) = watch::channel(false);
@@ -417,10 +423,14 @@ impl ServerSession {
         self.channels.push(channel.to_owned());
         let nick = self.nick.clone().unwrap_or_else(|| "*".to_owned());
 
+        // The greeting is not decoration: it gives a manual tester (or a visual
+        // check) something to look at without needing a second client.
         vec![
             format!(":{nick}!user@host JOIN {channel}"),
             format!(":{SERVER_NAME} 353 {nick} = {channel} :@{nick} alice bob"),
             format!(":{SERVER_NAME} 366 {nick} {channel} :End of /NAMES list."),
+            format!(":alice!alice@host PRIVMSG {channel} :Welcome to {channel}, {nick}!"),
+            format!(":bob!bob@host PRIVMSG {channel} :hi {nick}, this is a mock server"),
         ]
     }
 
@@ -452,6 +462,7 @@ impl ServerSession {
             format!(":{SERVER_NAME} 001 {nick} :Welcome to the test network, {nick}"),
             format!(":{SERVER_NAME} 002 {nick} :Your host is {SERVER_NAME}"),
             format!(":{SERVER_NAME} 005 {nick} CASEMAPPING=rfc1459 CHANTYPES=# :are supported"),
+            format!(":{SERVER_NAME} NOTICE {nick} :You are connected to the mock server"),
         ]
     }
 }

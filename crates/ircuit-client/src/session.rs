@@ -270,7 +270,7 @@ async fn run_session(
                     return SessionEnd::Stopped;
                 }
                 Some(command) => {
-                    for line in command_to_lines(command) {
+                    for line in command_to_lines(&command) {
                         if let Err(error) = transport::write_line(&mut writer, &line).await {
                             return SessionEnd::Failed(error);
                         }
@@ -438,20 +438,27 @@ async fn handle_inbound<W: AsyncWrite + Unpin>(
 }
 
 /// Turn an application command into protocol lines.
-fn command_to_lines(command: ClientCommand) -> Vec<String> {
+///
+/// Public because the caller needs the exact text that goes on the wire: the app
+/// layer mirrors outbound traffic into the server buffer, and reimplementing the
+/// splitting and framing rules would let the two drift apart.
+#[must_use]
+pub fn command_to_lines(command: &ClientCommand) -> Vec<String> {
     match command {
         ClientCommand::Privmsg { target, text } => {
-            split_to_messages(Command::Privmsg, &target, &text)
+            split_to_messages(Command::Privmsg, target, text)
         }
-        ClientCommand::Notice { target, text } => {
-            split_to_messages(Command::Notice, &target, &text)
+        ClientCommand::Notice { target, text } => split_to_messages(Command::Notice, target, text),
+        ClientCommand::Join(channel) => {
+            vec![Message::new(Command::Join, [channel.clone()]).to_wire()]
         }
-        ClientCommand::Join(channel) => vec![Message::new(Command::Join, [channel]).to_wire()],
         ClientCommand::Part { channel, reason } => match reason {
-            Some(reason) => vec![Message::new(Command::Part, [channel, reason]).to_wire()],
-            None => vec![Message::new(Command::Part, [channel]).to_wire()],
+            Some(reason) => {
+                vec![Message::new(Command::Part, [channel.clone(), reason.clone()]).to_wire()]
+            }
+            None => vec![Message::new(Command::Part, [channel.clone()]).to_wire()],
         },
-        ClientCommand::Nick(nick) => vec![Message::new(Command::Nick, [nick]).to_wire()],
+        ClientCommand::Nick(nick) => vec![Message::new(Command::Nick, [nick.clone()]).to_wire()],
         ClientCommand::Raw(line) => {
             // Strip framing characters so a raw line cannot become two commands.
             let cleaned: String = line.chars().filter(|c| *c != '\r' && *c != '\n').collect();
@@ -493,7 +500,7 @@ mod tests {
 
     #[test]
     fn privmsg_becomes_a_protocol_line() {
-        let lines = command_to_lines(ClientCommand::Privmsg {
+        let lines = command_to_lines(&ClientCommand::Privmsg {
             target: "#rust".to_owned(),
             text: "hello world".to_owned(),
         });
@@ -503,7 +510,7 @@ mod tests {
 
     #[test]
     fn long_messages_are_split_into_several_lines() {
-        let lines = command_to_lines(ClientCommand::Privmsg {
+        let lines = command_to_lines(&ClientCommand::Privmsg {
             target: "#rust".to_owned(),
             text: "word ".repeat(400),
         });
@@ -518,14 +525,14 @@ mod tests {
     #[test]
     fn part_includes_the_reason_only_when_given() {
         assert_eq!(
-            command_to_lines(ClientCommand::Part {
+            command_to_lines(&ClientCommand::Part {
                 channel: "#rust".to_owned(),
                 reason: None,
             }),
             vec!["PART #rust"]
         );
 
-        let with_reason = command_to_lines(ClientCommand::Part {
+        let with_reason = command_to_lines(&ClientCommand::Part {
             channel: "#rust".to_owned(),
             reason: Some("bye now".to_owned()),
         });
@@ -534,7 +541,9 @@ mod tests {
 
     #[test]
     fn raw_lines_cannot_smuggle_a_second_command() {
-        let lines = command_to_lines(ClientCommand::Raw("PRIVMSG #a :hi\r\nQUIT :bye".to_owned()));
+        let lines = command_to_lines(&ClientCommand::Raw(
+            "PRIVMSG #a :hi\r\nQUIT :bye".to_owned(),
+        ));
 
         assert_eq!(lines.len(), 1);
         assert!(!lines[0].contains('\r'));
@@ -543,12 +552,12 @@ mod tests {
 
     #[test]
     fn blank_raw_lines_are_dropped() {
-        assert!(command_to_lines(ClientCommand::Raw("   ".to_owned())).is_empty());
+        assert!(command_to_lines(&ClientCommand::Raw("   ".to_owned())).is_empty());
     }
 
     #[test]
     fn shutdown_produces_no_lines() {
-        assert!(command_to_lines(ClientCommand::Shutdown).is_empty());
+        assert!(command_to_lines(&ClientCommand::Shutdown).is_empty());
     }
 
     #[test]

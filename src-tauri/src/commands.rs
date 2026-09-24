@@ -1,39 +1,49 @@
-//! Tauri IPC 命令层：前端唯一能调用后端的入口。
+//! Tauri IPC command layer: the only way the frontend can reach the backend.
 //!
-//! 这里的命令应当只做参数校验与转发，业务逻辑放在 `crates/` 中。
+//! Commands here validate arguments and forward; the actual work lives in
+//! `crates/`. Keeping it that way is what lets the protocol and connection logic
+//! be tested without a webview.
+
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use tauri::{AppHandle, State};
 
-/// 应用与运行时的基本信息。
+use ircuit_client::ClientCommand;
+
+use crate::events::NetworkBacklog;
+use crate::net::{NetworkManager, NetworkRequest, NetworkSummary};
+
+/// Application and runtime information.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct AppInfo {
-    /// 产品名。
+    /// Product name.
     pub name: String,
-    /// 应用版本号。
+    /// Application version.
     pub version: String,
-    /// 所依赖的 Tauri 版本。
+    /// The Tauri version this build links against.
     pub tauri_version: String,
-    /// 目标操作系统，例如 `windows` / `macos` / `linux`。
+    /// Target operating system, e.g. `windows` / `macos` / `linux`.
     pub platform: String,
-    /// 目标 CPU 架构，例如 `x86_64` / `aarch64`。
+    /// Target CPU architecture, e.g. `x86_64` / `aarch64`.
     pub arch: String,
-    /// 是否为 debug 构建。
+    /// Whether this is a debug build.
     pub debug: bool,
 }
 
-/// 一个核心模块在界面上的自我描述。
+/// A core crate describing itself, shown in the architecture panel.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct CoreModule {
-    /// crate 名。
+    /// Crate name.
     pub name: String,
-    /// 该模块负责什么。
+    /// What the crate is responsible for.
     pub responsibility: String,
-    /// 计划落地的里程碑。
+    /// The milestone that delivers it.
     pub milestone: String,
 }
 
-/// 返回应用与运行时信息。
+/// Return application and runtime information.
 #[tauri::command]
 #[specta::specta]
 pub fn get_app_info() -> AppInfo {
@@ -47,7 +57,7 @@ pub fn get_app_info() -> AppInfo {
     }
 }
 
-/// 返回核心模块清单，供界面展示架构就绪情况。
+/// Return the list of core crates and their status.
 #[tauri::command]
 #[specta::specta]
 pub fn list_core_modules() -> Vec<CoreModule> {
@@ -62,18 +72,112 @@ pub fn list_core_modules() -> Vec<CoreModule> {
     vec![
         module(
             "ircuit-proto",
-            "RFC 1459 / IRCv3 报文编解码、格式码处理",
-            "M1",
+            "IRC 报文编解码、IRCv3 标签、格式码",
+            "M1 已完成",
         ),
         module(
             "ircuit-client",
-            "连接状态机、CAP 协商、SASL、自动重连",
-            "M1",
+            "连接、CAP 协商、SASL、保活与重连",
+            "M1 已完成",
         ),
-        module("ircuit-state", "网络 / 频道 / 用户状态模型", "M1"),
-        module("ircuit-storage", "SQLite 历史、FTS5 检索、凭据保管", "M3"),
+        module("ircuit-state", "消息归一化与状态模型", "M1 已完成"),
+        module("ircuit-storage", "历史、FTS5 检索、凭据保管", "M3"),
         module("ircuit-encoding", "编码检测与转换", "M4"),
         module("ircuit-dcc", "DCC CHAT 与文件传输", "M5"),
         module("ircuit-plugin", "QuickJS 插件宿主与 API", "M6"),
     ]
+}
+
+/// Open a connection to a network.
+#[tauri::command]
+#[specta::specta]
+pub async fn connect_network(
+    app: AppHandle,
+    manager: State<'_, Arc<NetworkManager>>,
+    request: NetworkRequest,
+) -> Result<NetworkSummary, String> {
+    manager.inner().connect(&app, request).await
+}
+
+/// Close a connection and stop retrying it.
+#[tauri::command]
+#[specta::specta]
+pub async fn disconnect_network(
+    manager: State<'_, Arc<NetworkManager>>,
+    network_id: String,
+) -> Result<(), String> {
+    manager.inner().disconnect(&network_id).await
+}
+
+/// Every network the application is tracking.
+#[tauri::command]
+#[specta::specta]
+pub async fn list_networks(
+    manager: State<'_, Arc<NetworkManager>>,
+) -> Result<Vec<NetworkSummary>, String> {
+    Ok(manager.inner().list().await)
+}
+
+/// Recent events for one network, so a freshly mounted UI can catch up.
+///
+/// Tauri events are not buffered: without this, anything emitted before the
+/// window finished loading would be lost — including an entire registration
+/// handshake when the connection was opened at startup.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_network_backlog(
+    manager: State<'_, Arc<NetworkManager>>,
+    network_id: String,
+) -> Result<NetworkBacklog, String> {
+    manager
+        .inner()
+        .backlog(&network_id)
+        .await
+        .ok_or_else(|| format!("no such network: {network_id}"))
+}
+
+/// Send a message to a channel or user.
+#[tauri::command]
+#[specta::specta]
+pub async fn send_message(
+    app: AppHandle,
+    manager: State<'_, Arc<NetworkManager>>,
+    network_id: String,
+    target: String,
+    text: String,
+) -> Result<(), String> {
+    manager
+        .inner()
+        .send(&app, &network_id, ClientCommand::Privmsg { target, text })
+        .await
+}
+
+/// Join a channel.
+#[tauri::command]
+#[specta::specta]
+pub async fn join_channel(
+    app: AppHandle,
+    manager: State<'_, Arc<NetworkManager>>,
+    network_id: String,
+    channel: String,
+) -> Result<(), String> {
+    manager
+        .inner()
+        .send(&app, &network_id, ClientCommand::Join(channel))
+        .await
+}
+
+/// Send a raw protocol line, for the command console.
+#[tauri::command]
+#[specta::specta]
+pub async fn send_raw_command(
+    app: AppHandle,
+    manager: State<'_, Arc<NetworkManager>>,
+    network_id: String,
+    line: String,
+) -> Result<(), String> {
+    manager
+        .inner()
+        .send(&app, &network_id, ClientCommand::Raw(line))
+        .await
 }

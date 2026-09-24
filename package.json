@@ -41,6 +41,7 @@
   "devDependencies": {
     "@tailwindcss/vite": "^4",
     "@tauri-apps/cli": "^2",
+    "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16",
     "@types/node": "^24",
     "@types/react": "^19",

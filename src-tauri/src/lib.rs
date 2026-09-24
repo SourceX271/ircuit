@@ -7,24 +7,34 @@ pub mod bindings;
 pub mod commands;
 pub mod events;
 pub mod logging;
+pub mod net;
 
 /// 启动桌面应用。
 pub fn run() {
     logging::init();
 
+    // 绑定只能由 `pnpm cargo:bindings`（专用的 export-bindings bin）生成。
+    //
+    // 这里刻意**不**顺带导出：debug 构建曾经在启动时重写 `src/lib/bindings.ts`，
+    // 于是运行一个陈旧的二进制就会把新生成的绑定覆盖回旧版本，前端随即在
+    // 调用不存在的命令时崩溃，且症状（窗口全白）与原因毫无关联。
     let builder = bindings::builder();
 
-    // 开发构建下顺带刷新 TS 绑定，避免前后端类型漂移。
+    let manager = std::sync::Arc::new(net::NetworkManager::default());
+    let heartbeat_manager = std::sync::Arc::clone(&manager);
     #[cfg(debug_assertions)]
-    if let Err(error) = bindings::export() {
-        tracing::warn!(%error, "生成 IPC 类型绑定失败");
-    }
+    let autoconnect_manager = std::sync::Arc::clone(&manager);
 
     tauri::Builder::default()
+        .manage(manager)
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
             builder.mount_events(app);
-            events::spawn_status_heartbeat(app.handle().clone());
+            net::spawn_status_heartbeat(app.handle().clone(), heartbeat_manager);
+
+            #[cfg(debug_assertions)]
+            net::maybe_autoconnect(app.handle().clone(), autoconnect_manager);
+
             tracing::info!(version = env!("CARGO_PKG_VERSION"), "Ircuit 已启动");
             Ok(())
         })

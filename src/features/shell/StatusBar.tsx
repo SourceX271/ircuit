@@ -49,6 +49,11 @@ export function StatusBar({ bridge }: { bridge: CoreBridgeState }) {
       </span>
 
       <span className="flex items-center gap-1.5">
+        <span className="text-muted">{t('status.networks')}</span>
+        <span className="font-mono tabular-nums">{bridge.status?.connected_networks ?? 0}</span>
+      </span>
+
+      <span className="flex items-center gap-1.5">
         <span className="text-muted">{t('status.events')}</span>
         <span className="font-mono tabular-nums">{bridge.heartbeatCount}</span>
       </span>
@@ -58,11 +63,6 @@ export function StatusBar({ bridge }: { bridge: CoreBridgeState }) {
         <span className="font-mono tabular-nums">
           {formatUptime(bridge.status?.uptime_seconds ?? null)}
         </span>
-      </span>
-
-      <span className="flex items-center gap-1.5">
-        <span className="text-muted">{t('status.modules')}</span>
-        <span className="font-mono tabular-nums">{bridge.modules.length}</span>
       </span>
 
       <span className="ml-auto flex items-center gap-1.5">

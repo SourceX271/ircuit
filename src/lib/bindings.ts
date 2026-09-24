@@ -5,67 +5,215 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 
 /** Commands */
 export const commands = {
-	/**  返回应用与运行时信息。 */
+	/**  Return application and runtime information. */
 	getAppInfo: () => __TAURI_INVOKE<AppInfo>("get_app_info"),
-	/**  返回核心模块清单，供界面展示架构就绪情况。 */
+	/**  Return the list of core crates and their status. */
 	listCoreModules: () => __TAURI_INVOKE<CoreModule[]>("list_core_modules"),
+	/**  Open a connection to a network. */
+	connectNetwork: (request: NetworkRequest) => typedError<NetworkSummary, string>(__TAURI_INVOKE("connect_network", { request })),
+	/**  Close a connection and stop retrying it. */
+	disconnectNetwork: (networkId: string) => typedError<null, string>(__TAURI_INVOKE("disconnect_network", { networkId })),
+	/**  Every network the application is tracking. */
+	listNetworks: () => typedError<NetworkSummary[], string>(__TAURI_INVOKE("list_networks")),
+	/**
+	 *  Recent events for one network, so a freshly mounted UI can catch up.
+	 * 
+	 *  Tauri events are not buffered: without this, anything emitted before the
+	 *  window finished loading would be lost — including an entire registration
+	 *  handshake when the connection was opened at startup.
+	 */
+	getNetworkBacklog: (networkId: string) => typedError<NetworkBacklog, string>(__TAURI_INVOKE("get_network_backlog", { networkId })),
+	/**  Send a message to a channel or user. */
+	sendMessage: (networkId: string, target: string, text: string) => typedError<null, string>(__TAURI_INVOKE("send_message", { networkId, target, text })),
+	/**  Join a channel. */
+	joinChannel: (networkId: string, channel: string) => typedError<null, string>(__TAURI_INVOKE("join_channel", { networkId, channel })),
+	/**  Send a raw protocol line, for the command console. */
+	sendRawCommand: (networkId: string, line: string) => typedError<null, string>(__TAURI_INVOKE("send_raw_command", { networkId, line })),
 };
 
 /** Events */
 export const events = {
 	coreStatus: makeEvent<CoreStatus>("core-status"),
+	incomingMessage: makeEvent<IncomingMessage>("incoming-message"),
+	networkStatus: makeEvent<NetworkStatus>("network-status"),
+	rawTraffic: makeEvent<RawTraffic>("raw-traffic"),
 };
 
 /* Types */
-/**  应用与运行时的基本信息。 */
+/**  Application and runtime information. */
 export type AppInfo = {
-	/**  产品名。 */
+	/**  Product name. */
 	name: string,
-	/**  应用版本号。 */
+	/**  Application version. */
 	version: string,
-	/**  所依赖的 Tauri 版本。 */
+	/**  The Tauri version this build links against. */
 	tauri_version: string,
-	/**  目标操作系统，例如 `windows` / `macos` / `linux`。 */
+	/**  Target operating system, e.g. `windows` / `macos` / `linux`. */
 	platform: string,
-	/**  目标 CPU 架构，例如 `x86_64` / `aarch64`。 */
+	/**  Target CPU architecture, e.g. `x86_64` / `aarch64`. */
 	arch: string,
-	/**  是否为 debug 构建。 */
+	/**  Whether this is a debug build. */
 	debug: boolean,
 };
 
-/**  一个核心模块在界面上的自我描述。 */
+/**  Where a connection is in its lifecycle. */
+export type ConnectionState = 
+/**  Socket not open yet, or waiting to retry. */
+"connecting" | 
+/**  Socket open, registration not finished. */
+"connected" | 
+/**  Registered with the server. */
+"registered" | 
+/**  Closed and not retrying. */
+"disconnected";
+
+/**  A core crate describing itself, shown in the architecture panel. */
 export type CoreModule = {
-	/**  crate 名。 */
+	/**  Crate name. */
 	name: string,
-	/**  该模块负责什么。 */
+	/**  What the crate is responsible for. */
 	responsibility: string,
-	/**  计划落地的里程碑。 */
+	/**  The milestone that delivers it. */
 	milestone: string,
 };
 
 /**
- *  核心运行时状态快照。
+ *  Core runtime status snapshot.
  * 
- *  M0 阶段只是一个心跳，用来验证 IPC 事件通道可用；随着 M1/M2 落地，
- *  这里的字段会变成真实的网络与 buffer 计数。
+ *  Started life as an M0 heartbeat proving the event channel worked; it remains
+ *  the cheapest way to tell "backend alive" from "backend wedged".
  */
 export type CoreStatus = {
 	/**
-	 *  应用已运行的秒数。
+	 *  Seconds since the application started.
 	 * 
-	 *  刻意用 `u32` 而非 `u64`：跨 IPC 的整数最终是 JS 的 `number`，
-	 *  specta 会直接拒绝导出 64 位整数以避免精度丢失。秒粒度的 u32
-	 *  可以表示 136 年，对运行时长完全够用。
-	 *  约定见 `docs/实施计划.md` 的「IPC 整数约定」。
+	 *  `u32` rather than `u64` on purpose: integers crossing IPC become JS
+	 *  numbers, and specta refuses to export 64-bit integers to avoid silent
+	 *  precision loss. Seconds fit 136 years. See `docs/实施计划.md` §7.
 	 */
 	uptime_seconds: number,
-	/**  当前已连接的网络数量。 */
+	/**  Networks currently registered. */
 	connected_networks: number,
-	/**  当前打开的 buffer 数量。 */
+	/**  Open buffers. */
 	active_buffers: number,
 };
 
+/**  A line destined for a message list. */
+export type IncomingMessage = {
+	network_id: string,
+	/**  Sender's display name; empty for server-generated lines. */
+	nick: string,
+	kind: MessageKind,
+	/**  Channel or user this line belongs to. */
+	target: string,
+	text: string,
+	/**  Unix seconds, from the `server-time` tag when available. */
+	timestamp: number,
+	/**  Whether we sent it. */
+	is_self: boolean,
+	/**
+	 *  Monotonic per-network sequence.
+	 * 
+	 *  Exists so the UI can subscribe *and* replay the backlog without
+	 *  duplicating whatever arrived in between: an entry is applied only when
+	 *  its sequence is newer than the last one seen.
+	 */
+	seq: number,
+};
+
+/**  How a line should be presented. */
+export type MessageKind = "message" | "notice" | 
+/**  A CTCP `ACTION`, i.e. `/me waves`. */
+"action" | 
+/**  Server-generated: joins, parts, kicks, mode changes. */
+"system";
+
+/**
+ *  Recently emitted events for one network, for a UI that subscribed late.
+ * 
+ *  Tauri events are not buffered, so anything emitted between "connection
+ *  started" and "window finished mounting" would otherwise be lost forever —
+ *  which includes the entire registration handshake when a connection is opened
+ *  at startup.
+ */
+export type NetworkBacklog = {
+	network_id: string,
+	/**  Oldest first. */
+	messages: IncomingMessage[],
+	/**  Oldest first. */
+	traffic: RawTraffic[],
+};
+
+/**  What the UI sends when creating a connection. */
+export type NetworkRequest = {
+	host: string,
+	/**  `0` means "the default port for the chosen transport". */
+	port: number,
+	tls: boolean,
+	nick: string,
+	/**  Defaults to the nickname when empty. */
+	realname: string | null,
+	/**  SASL account; SASL is only enabled when both account and password are set. */
+	sasl_account: string | null,
+	sasl_password: string | null,
+};
+
+/**  Emitted whenever a connection's state changes. */
+export type NetworkStatus = {
+	network_id: string,
+	/**  Display name, currently the host. */
+	name: string,
+	host: string,
+	port: number,
+	tls: boolean,
+	state: ConnectionState,
+	/**  The nickname in use, once the server has accepted one. */
+	nick: string | null,
+	/**  Capabilities the server granted. */
+	capabilities: string[],
+	/**  The most recent disconnect or failure reason. */
+	detail: string | null,
+	/**  Which connection attempt this is, counting from 1. */
+	attempt: number,
+};
+
+/**  A network as the UI sees it. */
+export type NetworkSummary = {
+	id: string,
+	name: string,
+	host: string,
+	port: number,
+	tls: boolean,
+	state: ConnectionState,
+	nick: string | null,
+	capabilities: string[],
+	detail: string | null,
+	attempt: number,
+};
+
+/**  A raw protocol line, for the server buffer. */
+export type RawTraffic = {
+	network_id: string,
+	direction: TrafficDirection,
+	line: string,
+	timestamp: number,
+	/**  Monotonic per-network sequence; see [`IncomingMessage::seq`]. */
+	seq: number,
+};
+
+/**  Which way a raw protocol line was travelling. */
+export type TrafficDirection = "inbound" | "outbound";
+
 /* Tauri Specta runtime */
+async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {
+    try {
+        return { status: "ok", data: await result };
+    } catch (e) {
+        if (e instanceof Error) throw e;
+        return { status: "error", error: e as any };
+    }
+}
+
 type EventEmit<T> = [T] extends [null] ? () => Promise<void> : (payload: T) => Promise<void>;
 
 function makeEvent<T>(name: string, serialize?: (payload: T) => unknown, deserialize?: (payload: any) => T) {

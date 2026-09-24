@@ -8,9 +8,7 @@ export const en: TranslationSchema = {
   },
 
   shell: {
-    milestone: 'M0 · Skeleton',
-    placeholderNotice:
-      'Skeleton build: all content below is placeholder data. Real sessions arrive in M2.',
+    milestone: 'M1 · Protocol core',
   },
 
   a11y: {
@@ -19,25 +17,53 @@ export const en: TranslationSchema = {
 
   sidebar: {
     networks: 'Networks',
-    channels: 'Channels',
-    direct: 'Direct messages',
+    server: 'Server',
     addNetwork: 'Add network',
     bufferActions: 'Buffer actions',
+    disconnect: 'Disconnect',
+  },
+
+  network: {
+    title: 'Add a network',
+    host: 'Server address',
+    hostPlaceholder: 'irc.libera.chat',
+    port: 'Port',
+    portPlaceholder: 'Leave blank for the default port',
+    tls: 'Use TLS',
+    nick: 'Nickname',
+    realname: 'Real name',
+    realnamePlaceholder: 'Defaults to the nickname',
+    saslAccount: 'SASL account',
+    saslPassword: 'SASL password',
+    saslHint: 'SASL (PLAIN) is enabled only when both fields are filled in',
+    connect: 'Connect',
+    cancel: 'Cancel',
+    state: {
+      connecting: 'Connecting',
+      connected: 'Handshaking',
+      registered: 'Ready',
+      disconnected: 'Disconnected',
+    },
+    attempt: 'Attempt {{count}}',
+    capabilities: 'Negotiated capabilities',
+  },
+
+  empty: {
+    title: 'Not connected to any network',
+    hint: 'Use the + button on the left to add one.',
   },
 
   topic: {
     label: 'Channel topic',
     noTopic: '(no topic set)',
+    serverBuffer: 'Raw protocol traffic',
+    channelHint: 'Type /join #channel to join a channel',
   },
 
   members: {
     title: 'Members',
     count: '{{count}} members',
-    owner: 'Owner',
-    admin: 'Admin',
-    op: 'Operator',
-    voice: 'Voice',
-    away: 'Away',
+    unavailable: 'The member list arrives in M2',
   },
 
   composer: {
@@ -47,6 +73,9 @@ export const en: TranslationSchema = {
     format: 'Formatting',
     emoji: 'Emoji',
     attach: 'Attach',
+    commandHint: 'Commands: /join /msg /me /raw',
+    unknownCommand: 'Unknown command: /{{command}}',
+    actionNeedsTarget: '/me needs a channel or a conversation',
   },
 
   status: {
@@ -55,6 +84,7 @@ export const en: TranslationSchema = {
     uptime: 'Uptime',
     modules: 'Core modules',
     platform: 'Platform',
+    networks: 'Networks',
     ok: 'online',
     waiting: 'waiting',
     down: 'down',
@@ -78,7 +108,7 @@ export const en: TranslationSchema = {
   },
 
   selfCheck: {
-    title: 'M0 self-check',
+    title: 'Diagnostics',
     appInfo: 'App info',
     version: 'Version',
     tauri: 'Tauri',

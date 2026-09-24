@@ -8,13 +8,13 @@
 
 ## 状态
 
-**M0（工程骨架）已完成**，下一步是 M1（协议内核）。里程碑规划见 [`docs/实施计划.md`](docs/实施计划.md)，需求基线见 [`docs/需求文档.md`](docs/需求文档.md)。
+**M1（协议内核）已完成**，下一步是 M2（会话 UI）。里程碑规划见 [`docs/实施计划.md`](docs/实施计划.md)，需求基线见 [`docs/需求文档.md`](docs/需求文档.md)。
 
 | 里程碑 | 状态 |
 | --- | --- |
 | M0 工程骨架 | ✅ 已完成 |
-| M1 协议内核 | 下一步 |
-| M2 会话 UI | 未开始 |
+| M1 协议内核 | ✅ 已完成 |
+| M2 会话 UI | 下一步 |
 | M3 持久化与检索 | 未开始 |
 | M4 兼容性 | 未开始 |
 | M5 DCC 与文件 | 未开始 |
@@ -101,6 +101,33 @@ pnpm test
 
 ```powershell
 pwsh -File scripts/dev/capture-window.ps1 -ProcessName ircuit -OutputPath .cache/ui.png
+```
+
+---
+
+## 开发用服务器与自动连接
+
+调试时不必每次都填连接表单。debug 构建支持两个环境变量，release 构建里没有这两条路径。
+
+```powershell
+# 终端 1：起一个进程内 mock IRC 服务器，默认 127.0.0.1:6667
+cargo run -p ircuit-testserver --bin ircuit-testserver
+
+# 终端 2：启动应用并直接连上它，注册后自动入频道
+$env:IRCUIT_AUTOCONNECT = '127.0.0.1:6667:alice:plain'
+$env:IRCUIT_AUTOJOIN = '#ircuit'
+pnpm tauri dev
+```
+
+`IRCUIT_AUTOCONNECT` 的格式是 `<host>:<port>:<nick>[:plain]`，省略 `:plain` 表示使用 TLS。
+
+连真实网络的手工回归测试（默认连 OFTC；Libera 对多数机房网段要求 SASL，需额外提供凭据）：
+
+```powershell
+cargo test -p ircuit-client --test registration -- --ignored --nocapture
+$env:IRCUIT_TEST_SERVER = 'irc.libera.chat'
+$env:IRCUIT_TEST_SASL_ACCOUNT = '<account>'
+$env:IRCUIT_TEST_SASL_PASSWORD = '<password>'
 ```
 
 ---

@@ -9,8 +9,7 @@ export const zhCN = {
   },
 
   shell: {
-    milestone: 'M0 · 工程骨架',
-    placeholderNotice: '当前为骨架界面：数据均为占位示例，M2 起接入真实会话。',
+    milestone: 'M1 · 协议内核',
   },
 
   a11y: {
@@ -19,25 +18,53 @@ export const zhCN = {
 
   sidebar: {
     networks: '网络',
-    channels: '频道',
-    direct: '私聊',
+    server: '服务器',
     addNetwork: '添加网络',
     bufferActions: '会话操作',
+    disconnect: '断开',
+  },
+
+  network: {
+    title: '添加网络',
+    host: '服务器地址',
+    hostPlaceholder: 'irc.libera.chat',
+    port: '端口',
+    portPlaceholder: '留空使用默认端口',
+    tls: '使用 TLS',
+    nick: '昵称',
+    realname: '真实名称',
+    realnamePlaceholder: '留空则与昵称相同',
+    saslAccount: 'SASL 账号',
+    saslPassword: 'SASL 密码',
+    saslHint: '账号与密码都填写才启用 SASL（PLAIN）',
+    connect: '连接',
+    cancel: '取消',
+    state: {
+      connecting: '连接中',
+      connected: '握手中',
+      registered: '已就绪',
+      disconnected: '已断开',
+    },
+    attempt: '第 {{count}} 次尝试',
+    capabilities: '已协商能力',
+  },
+
+  empty: {
+    title: '还没有连接任何网络',
+    hint: '点击左侧的 + 添加一个网络开始。',
   },
 
   topic: {
     label: '频道主题',
     noTopic: '（无主题）',
+    serverBuffer: '原始协议流量',
+    channelHint: '输入 /join #频道 加入频道',
   },
 
   members: {
     title: '成员',
     count: '{{count}} 人',
-    owner: '所有者',
-    admin: '管理员',
-    op: '管理员',
-    voice: '语音',
-    away: '离开',
+    unavailable: 'M2 起提供成员列表',
   },
 
   composer: {
@@ -47,6 +74,9 @@ export const zhCN = {
     format: '格式',
     emoji: '表情',
     attach: '附件',
+    commandHint: '可用命令：/join /msg /me /raw',
+    unknownCommand: '未知命令：/{{command}}',
+    actionNeedsTarget: '/me 需要在一个频道或私聊里使用',
   },
 
   status: {
@@ -55,6 +85,7 @@ export const zhCN = {
     uptime: '运行时长',
     modules: '核心模块',
     platform: '平台',
+    networks: '网络',
     ok: '正常',
     waiting: '等待中',
     down: '中断',
@@ -78,7 +109,7 @@ export const zhCN = {
   },
 
   selfCheck: {
-    title: 'M0 自检',
+    title: '诊断',
     appInfo: '应用信息',
     version: '版本',
     tauri: 'Tauri',

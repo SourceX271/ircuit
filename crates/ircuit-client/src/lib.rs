@@ -43,5 +43,5 @@ pub use cap::{CapNegotiator, SaslOutcome, DEFAULT_CAPABILITIES};
 pub use config::{ConnectionConfig, SaslConfig, TlsMode};
 pub use error::Error;
 pub use reconnect::BackoffPolicy;
-pub use session::{spawn, ClientCommand, NetworkEvent, NetworkHandle};
+pub use session::{command_to_lines, spawn, ClientCommand, NetworkEvent, NetworkHandle};
 pub use transport::{LineReader, Transport};

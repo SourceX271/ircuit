@@ -7,6 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+ircuit-proto = { workspace = true }
 serde = { workspace = true }
 
 [lints]

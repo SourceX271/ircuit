@@ -1627,6 +1627,7 @@ dependencies = [
 name = "ircuit-state"
 version = "0.1.0"
 dependencies = [
+ "ircuit-proto",
  "serde",
 ]
 
@@ -1641,6 +1642,7 @@ dependencies = [
  "base64 0.23.1",
  "tokio",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
