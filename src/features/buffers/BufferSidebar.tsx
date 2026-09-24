@@ -1,4 +1,4 @@
-import { Hash, PanelLeftClose, Plus, Power, Server, User } from 'lucide-react';
+import { ChevronRight, Hash, PanelLeftClose, Plus, Power, Server, User } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { Badge } from '@/components/ui/badge';
@@ -6,6 +6,7 @@ import { IconButton } from '@/components/ui/icon-button';
 import { cn } from '@/lib/cn';
 import { disconnectNetwork, type ConnectionState } from '@/lib/ipc';
 import { orderedBuffers, useSessionStore, type SessionBuffer } from '@/store/session';
+import { useUiStore } from '@/store/ui';
 
 /** Colour of the per-network status dot. */
 const STATE_DOT: Record<ConnectionState, string> = {
@@ -78,9 +79,17 @@ function NetworkGroup({ networkId }: { networkId: string }) {
   const buffers = useSessionStore((state) => state.buffers);
   const removeNetwork = useSessionStore((state) => state.removeNetwork);
 
+  const collapsed = useUiStore((state) => state.collapsedNetworks.includes(networkId));
+  const toggleCollapsed = useUiStore((state) => state.toggleNetworkCollapsed);
+
   if (!network) return null;
 
   const owned = orderedBuffers([network], buffers);
+
+  // A folded group still has to say that something is waiting inside it,
+  // otherwise folding becomes a way to lose messages.
+  const waiting = owned.reduce((total, buffer) => total + buffer.unread, 0);
+  const highlighted = owned.some((buffer) => buffer.highlight);
 
   const onDisconnect = () => {
     void disconnectNetwork(networkId)
@@ -92,14 +101,35 @@ function NetworkGroup({ networkId }: { networkId: string }) {
 
   return (
     <section className="mb-3">
-      <header className="group flex items-center gap-2 px-2.5 py-1">
-        <span
-          aria-hidden
-          className={cn('size-1.5 shrink-0 rounded-full', STATE_DOT[network.state])}
-        />
-        <h2 className="min-w-0 flex-1 truncate text-[10.5px] font-semibold uppercase tracking-[0.08em] text-faint">
-          {network.name}
-        </h2>
+      <header className="group flex items-center gap-1.5 px-2 py-1">
+        <button
+          type="button"
+          onClick={() => toggleCollapsed(networkId)}
+          aria-expanded={!collapsed}
+          aria-label={t(collapsed ? 'sidebar.expandNetwork' : 'sidebar.collapseNetwork', {
+            network: network.name,
+          })}
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-0.5 py-0.5 text-left hover:bg-sidebar-hover"
+        >
+          <ChevronRight
+            aria-hidden
+            className={cn(
+              'size-3 shrink-0 text-faint transition-transform',
+              collapsed ? undefined : 'rotate-90',
+            )}
+            strokeWidth={2.5}
+          />
+          <span
+            aria-hidden
+            className={cn('size-1.5 shrink-0 rounded-full', STATE_DOT[network.state])}
+          />
+          <h2 className="min-w-0 flex-1 truncate text-[10.5px] font-semibold uppercase tracking-[0.08em] text-faint">
+            {network.name}
+          </h2>
+          {collapsed && waiting > 0 ? (
+            <Badge tone={highlighted ? 'highlight' : 'neutral'}>{waiting}</Badge>
+          ) : null}
+        </button>
         <IconButton
           label={t('sidebar.disconnect')}
           size="sm"
@@ -110,11 +140,13 @@ function NetworkGroup({ networkId }: { networkId: string }) {
         </IconButton>
       </header>
 
-      <div className="flex flex-col gap-px px-1.5">
-        {owned.map((buffer) => (
-          <BufferRow key={buffer.id} buffer={buffer} />
-        ))}
-      </div>
+      {collapsed ? null : (
+        <div className="flex flex-col gap-px px-1.5">
+          {owned.map((buffer) => (
+            <BufferRow key={buffer.id} buffer={buffer} />
+          ))}
+        </div>
+      )}
     </section>
   );
 }

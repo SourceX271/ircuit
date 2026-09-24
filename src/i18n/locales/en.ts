@@ -69,6 +69,14 @@ export const en: TranslationSchema = {
     addNetwork: 'Add network',
     bufferActions: 'Buffer actions',
     disconnect: 'Disconnect',
+    collapseNetwork: 'Collapse {{network}}',
+    expandNetwork: 'Expand {{network}}',
+  },
+
+  tabs: {
+    label: 'Open buffers',
+    close: 'Close {{name}}',
+    unread: '{{count}} unread',
   },
 
   network: {

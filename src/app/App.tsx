@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { IconButton } from '@/components/ui/icon-button';
 import { BufferSidebar } from '@/features/buffers/BufferSidebar';
+import { BufferTabs } from '@/features/buffers/BufferTabs';
 import { Composer } from '@/features/composer/Composer';
 import { MemberList } from '@/features/members/MemberList';
 import { MessageList } from '@/features/messages/MessageList';
@@ -90,6 +91,7 @@ export function App() {
         )}
 
         <main id="main" className="flex min-w-0 flex-1 flex-col">
+          <BufferTabs />
           <TopicBar
             buffer={buffer}
             networkName={network?.name ?? null}

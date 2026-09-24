@@ -585,3 +585,102 @@ async fn registers_with_a_real_network_over_tls() {
 
     let _ = handle.send(ClientCommand::Shutdown).await;
 }
+
+/// The M2 acceptance target, at the layer where it can be measured.
+///
+/// "Three networks and ten channels, used daily" is a claim about independent
+/// connections not interfering with each other. Each connection has its own
+/// socket, task and event stream, so the failure it guards against is shared
+/// state leaking between them — a bug that a single-network test cannot see.
+#[tokio::test]
+async fn three_networks_and_ten_channels_run_at_once() {
+    const CHANNELS: [&str; 10] = [
+        "#alpha", "#bravo", "#charlie", "#delta", "#echo", "#foxtrot", "#golf", "#hotel", "#india",
+        "#juliet",
+    ];
+
+    let mut servers = Vec::new();
+    for _ in 0..3 {
+        servers.push(TestServer::start(ServerConfig::default()).await.unwrap());
+    }
+
+    let mut connections = Vec::new();
+    for (index, server) in servers.iter().enumerate() {
+        let nick = format!("user{index}");
+        let (handle, mut events) = spawn(local(server, &nick), BackoffPolicy::immediate());
+
+        assert!(
+            wait_for_registration(&mut events).await.is_some(),
+            "network {index} never registered"
+        );
+
+        connections.push((handle, events, nick));
+    }
+
+    // Spread the channels over the three connections.
+    for (index, channel) in CHANNELS.iter().enumerate() {
+        let (handle, _, _) = &connections[index % connections.len()];
+        handle
+            .send(ClientCommand::Join((*channel).to_owned()))
+            .await
+            .unwrap();
+    }
+
+    for (index, server) in servers.iter().enumerate() {
+        let expected: Vec<&str> = CHANNELS
+            .iter()
+            .enumerate()
+            .filter(|(slot, _)| slot % servers.len() == index)
+            .map(|(_, channel)| *channel)
+            .collect();
+
+        let last = expected.last().expect("every connection gets a channel");
+
+        assert!(
+            server
+                .wait_for_line(|line| line == format!("JOIN {last}"), TIMEOUT)
+                .await
+                .is_some(),
+            "network {index} never joined {last}"
+        );
+
+        // Each server must see exactly its own channels — a shared channel list
+        // would show up here as a count that is too high.
+        assert_eq!(server.channels().await, expected);
+    }
+
+    // Traffic on one connection must not disturb the others, and every message
+    // must come back through the matching event stream.
+    for (index, (handle, events, nick)) in connections.iter_mut().enumerate() {
+        let channel = CHANNELS[index % CHANNELS.len()];
+        let text = format!("hello from {nick}");
+
+        handle
+            .send(ClientCommand::Privmsg {
+                target: channel.to_owned(),
+                text: text.clone(),
+            })
+            .await
+            .unwrap();
+
+        let echoed = wait_for(events, |event| {
+            matches!(
+                event,
+                NetworkEvent::Message(message)
+                    if message.command == Command::Privmsg
+                        && message.param(1) == Some(text.as_str())
+            )
+        })
+        .await;
+
+        assert!(echoed.is_some(), "network {index} never got its echo back");
+    }
+
+    for (handle, _, _) in &connections {
+        let _ = handle.send(ClientCommand::Shutdown).await;
+    }
+
+    for server in &servers {
+        server.shutdown().await;
+    }
+}

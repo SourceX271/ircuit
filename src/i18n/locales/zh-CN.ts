@@ -70,6 +70,14 @@ export const zhCN = {
     addNetwork: '添加网络',
     bufferActions: '会话操作',
     disconnect: '断开',
+    collapseNetwork: '折叠 {{network}}',
+    expandNetwork: '展开 {{network}}',
+  },
+
+  tabs: {
+    label: '打开的会话',
+    close: '关闭 {{name}}',
+    unread: '{{count}} 条未读',
   },
 
   network: {

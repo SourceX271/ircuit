@@ -2,9 +2,13 @@ import { create } from 'zustand';
 
 import i18n, { type Language, persistLanguage, readStoredLanguage } from '@/i18n';
 import {
+  COLLAPSED_NETWORKS_KEY,
+  parseNetworkIds,
+  persistJson,
   persistMembersOpen,
   persistSendOnEnter,
   persistSidebarOpen,
+  readStoredJson,
   readStoredMembersOpen,
   readStoredSendOnEnter,
   readStoredSidebarOpen,
@@ -36,12 +40,15 @@ export interface UiState {
   paletteOpen: boolean;
   /** 新建连接的对话框是否打开。同样不持久化。 */
   connectionDialogOpen: boolean;
+  /** 会话树里被折叠起来的网络。折叠状态持久化：它表达的是布局偏好。 */
+  collapsedNetworks: string[];
 
   setThemeMode: (mode: ThemeMode) => void;
   setLanguage: (language: Language) => void;
   setSendOnEnter: (value: boolean) => void;
   toggleSidebar: () => void;
   toggleMembers: () => void;
+  toggleNetworkCollapsed: (networkId: string) => void;
   setPaletteOpen: (open: boolean) => void;
   setConnectionDialogOpen: (open: boolean) => void;
 }
@@ -54,6 +61,12 @@ export const useUiStore = create<UiState>((set, get) => ({
   membersOpen: readStoredMembersOpen(window.localStorage),
   paletteOpen: false,
   connectionDialogOpen: false,
+  collapsedNetworks: readStoredJson(
+    window.localStorage,
+    COLLAPSED_NETWORKS_KEY,
+    parseNetworkIds,
+    [],
+  ),
 
   setThemeMode: (mode) => {
     persistTheme(window.localStorage, mode);
@@ -88,4 +101,15 @@ export const useUiStore = create<UiState>((set, get) => ({
   setPaletteOpen: (open) => set({ paletteOpen: open }),
 
   setConnectionDialogOpen: (open) => set({ connectionDialogOpen: open }),
+
+  toggleNetworkCollapsed: (networkId) => {
+    const current = get().collapsedNetworks;
+
+    const next = current.includes(networkId)
+      ? current.filter((id) => id !== networkId)
+      : [...current, networkId];
+
+    persistJson(window.localStorage, COLLAPSED_NETWORKS_KEY, next);
+    set({ collapsedNetworks: next });
+  },
 }));

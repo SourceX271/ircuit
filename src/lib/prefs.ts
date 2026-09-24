@@ -97,3 +97,12 @@ export function persistJson(storage: Pick<Storage, 'setItem'>, key: string, valu
     // 存储被禁用或写满时静默放弃：偏好没记住不是值得打断用户的问题。
   }
 }
+
+/** 会话树里被折叠的网络 id。 */
+export const COLLAPSED_NETWORKS_KEY = 'ircuit.collapsedNetworks';
+
+/** 校验折叠列表：只接受字符串数组。 */
+export function parseNetworkIds(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null;
+  return value.filter((entry): entry is string => typeof entry === 'string');
+}
