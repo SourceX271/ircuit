@@ -1,3 +1,4 @@
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { Fragment, useEffect, useMemo, useRef, type MouseEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -6,7 +7,7 @@ import { openExternal, type MessageKind, type MessageSegment } from '@/lib/ipc';
 import { parseBufferId, useSessionStore, type TrafficLine } from '@/store/session';
 
 import { isPlainStyle, segmentStyle } from './formatting';
-import { buildBlocks, type DisplayRow } from './grouping';
+import { buildBlocks, flattenBlocks, type DisplayRow } from './grouping';
 import { hrefFor, tokenizeLinks, type TextToken } from './links';
 
 /** Nickname colours are indexed tokens, so the choice has to be inline. */
@@ -223,20 +224,75 @@ function TrafficRow({ line }: { line: TrafficLine }) {
   );
 }
 
-/** Scroll container shared by both views, so the layout rules stay in one place. */
-function Scrolling({ children, count }: { children: ReactNode; count: number }) {
+/**
+ * A virtualised, bottom-sticky log.
+ *
+ * Rows vary in height — wrapped text, day separators, grouped bodies — so
+ * heights are measured rather than estimated from a constant.
+ *
+ * Auto-scrolling only happens when the user is already at the bottom. Yanking the
+ * viewport while somebody is reading back through history is the single most
+ * annoying thing a chat client can do.
+ */
+function VirtualLog<T>({
+  items,
+  getKey,
+  renderItem,
+  estimateSize = 40,
+}: {
+  items: readonly T[];
+  getKey: (item: T, index: number) => string;
+  renderItem: (item: T) => ReactNode;
+  estimateSize?: number;
+}) {
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const stickToBottom = useRef(true);
 
-  // A chat log is read from the bottom; jumping there on new content is the
-  // only behaviour that matches expectations.
-  useEffect(() => {
+  const virtualizer = useVirtualizer({
+    count: items.length,
+    getScrollElement: () => scrollerRef.current,
+    estimateSize: () => estimateSize,
+    overscan: 12,
+  });
+
+  const onScroll = () => {
     const element = scrollerRef.current;
-    if (element) element.scrollTop = element.scrollHeight;
-  }, [count]);
+    if (!element) return;
+    // A little slack, so nudging the wheel does not switch stickiness off.
+    stickToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 48;
+  };
+
+  useEffect(() => {
+    if (stickToBottom.current && items.length > 0) {
+      virtualizer.scrollToIndex(items.length - 1, { align: 'end' });
+    }
+  }, [items.length, virtualizer]);
 
   return (
-    <div ref={scrollerRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto py-2">
-      {children}
+    <div ref={scrollerRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto py-2">
+      <div style={{ height: virtualizer.getTotalSize(), position: 'relative', width: '100%' }}>
+        {virtualizer.getVirtualItems().map((virtualItem) => {
+          const item = items[virtualItem.index];
+          if (item === undefined) return null;
+
+          return (
+            <div
+              key={getKey(item, virtualItem.index)}
+              data-index={virtualItem.index}
+              ref={virtualizer.measureElement}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                transform: `translateY(${virtualItem.start}px)`,
+              }}
+            >
+              {renderItem(item)}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -251,7 +307,7 @@ export function MessageList() {
 
   const buffer = buffers.find((candidate) => candidate.id === activeBufferId) ?? null;
   const entries = buffer ? (lines[buffer.id] ?? []) : [];
-  const blocks = useMemo(() => buildBlocks(entries), [entries]);
+  const items = useMemo(() => flattenBlocks(buildBlocks(entries)), [entries]);
 
   if (!buffer) {
     return (
@@ -268,33 +324,44 @@ export function MessageList() {
     const networkId = parseBufferId(buffer.id).networkId;
     const log = traffic[networkId] ?? [];
 
-    return (
-      <Scrolling count={log.length}>
-        {log.length === 0 ? (
+    if (log.length === 0) {
+      return (
+        <div className="min-h-0 flex-1 overflow-y-auto py-2">
           <p className="px-4 text-[12.5px] text-faint">{t('network.state.connecting')}…</p>
-        ) : (
-          log.map((line) => <TrafficRow key={line.id} line={line} />)
-        )}
-      </Scrolling>
+        </div>
+      );
+    }
+
+    return (
+      <VirtualLog
+        items={log}
+        getKey={(line) => line.id}
+        estimateSize={20}
+        renderItem={(line) => <TrafficRow line={line} />}
+      />
+    );
+  }
+
+  if (entries.length === 0) {
+    return (
+      <div className="min-h-0 flex-1 overflow-y-auto py-2">
+        <p className="px-4 text-[12.5px] text-faint">{t('topic.channelHint')}</p>
+      </div>
     );
   }
 
   return (
-    <Scrolling count={entries.length}>
-      {entries.length === 0 ? (
-        <p className="px-4 text-[12.5px] text-faint">{t('topic.channelHint')}</p>
-      ) : (
-        blocks.map((block, index) => (
-          <Fragment key={index}>
-            {block.daySeparator ? (
-              <DayDivider day={block.daySeparator} locale={i18n.language} />
-            ) : null}
-            {block.rows.map((row) => (
-              <LineRow key={row.line.id} row={row} />
-            ))}
-          </Fragment>
-        ))
-      )}
-    </Scrolling>
+    <VirtualLog
+      items={items}
+      getKey={(item) => item.key}
+      estimateSize={28}
+      renderItem={(item) =>
+        item.kind === 'day' ? (
+          <DayDivider day={item.day} locale={i18n.language} />
+        ) : (
+          <LineRow row={item.row} />
+        )
+      }
+    />
   );
 }

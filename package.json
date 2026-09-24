@@ -27,6 +27,7 @@
     "cargo:bindings": "node scripts/run-cargo.mjs run -p ircuit --bin export-bindings"
   },
   "dependencies": {
+    "@tanstack/react-virtual": "^3.14.13",
     "@tauri-apps/api": "^2",
     "class-variance-authority": "^0.7",
     "clsx": "^2",

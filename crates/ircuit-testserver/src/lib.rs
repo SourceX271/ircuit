@@ -46,6 +46,11 @@ pub struct ServerConfig {
     pub credentials: Option<(String, String)>,
     /// Reject the first nickname with `433` before accepting the next one.
     pub reject_first_nick: bool,
+    /// Extra messages to send after a join, for exercising long logs.
+    ///
+    /// A chat client's scroll behaviour only shows its problems at volume, so
+    /// there has to be a way to produce volume on demand.
+    pub flood: usize,
 }
 
 impl Default for ServerConfig {
@@ -58,6 +63,7 @@ impl Default for ServerConfig {
             require_sasl: false,
             credentials: None,
             reject_first_nick: false,
+            flood: 0,
         }
     }
 }
@@ -427,7 +433,7 @@ impl ServerSession {
         // check) something to look at without needing a second client. Between
         // them these lines cover member prefixes, message grouping, mIRC
         // formatting and link detection.
-        vec![
+        let mut replies = vec![
             format!(":{nick}!user@host JOIN {channel}"),
             format!(":{SERVER_NAME} 353 {nick} = {channel} :@{nick} alice +bob carol"),
             format!(":{SERVER_NAME} 366 {nick} {channel} :End of /NAMES list."),
@@ -444,7 +450,17 @@ impl ServerSession {
                 ":alice!alice@host PRIVMSG {channel} :history: \
                  https://en.wikipedia.org/wiki/IRC_(Internet_Relay_Chat), and www.irc.org"
             ),
-        ]
+        ];
+
+        // Optional filler, so scroll behaviour can be exercised at volume.
+        for index in 1..=self.config.flood {
+            replies.push(format!(
+                ":dave!dave@host PRIVMSG {channel} :filler line {index} of {}",
+                self.config.flood
+            ));
+        }
+
+        replies
     }
 
     /// Echo the message back, which is what `echo-message` promises.

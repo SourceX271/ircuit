@@ -83,3 +83,35 @@ export function buildBlocks(lines: readonly SessionLine[]): DisplayBlock[] {
 
   return blocks;
 }
+
+/** One entry in the flattened list the virtualiser walks. */
+export type DisplayItem =
+  { kind: 'day'; key: string; day: string } | { kind: 'row'; key: string; row: DisplayRow };
+
+/**
+ * Flatten blocks into a single list.
+ *
+ * A virtualiser needs a flat, indexable sequence, and day separators are part of
+ * the scroll flow rather than decoration around it — rendering them outside the
+ * list would make their height invisible to the scroll maths and the position
+ * would drift as the user scrolls.
+ */
+export function flattenBlocks(blocks: readonly DisplayBlock[]): DisplayItem[] {
+  const items: DisplayItem[] = [];
+
+  blocks.forEach((block, blockIndex) => {
+    if (block.daySeparator !== null) {
+      items.push({
+        kind: 'day',
+        key: `day-${blockIndex}-${block.daySeparator}`,
+        day: block.daySeparator,
+      });
+    }
+
+    for (const row of block.rows) {
+      items.push({ kind: 'row', key: row.line.id, row });
+    }
+  });
+
+  return items;
+}

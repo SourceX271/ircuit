@@ -40,6 +40,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = ServerConfig {
         require_sasl: std::env::var("IRCUIT_TESTSERVER_REQUIRE_SASL").is_ok(),
         credentials,
+        flood: std::env::var("IRCUIT_TESTSERVER_FLOOD")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(0),
         ..ServerConfig::default()
     };
 

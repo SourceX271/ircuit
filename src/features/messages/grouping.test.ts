@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildBlocks, dayKey, GROUP_WINDOW_SECONDS, shouldGroup } from './grouping';
+import { buildBlocks, dayKey, flattenBlocks, GROUP_WINDOW_SECONDS, shouldGroup } from './grouping';
 import type { SessionLine } from '@/store/session';
 
 const BASE = Date.UTC(2026, 0, 15, 12, 0, 0) / 1000;
@@ -139,5 +139,47 @@ describe('buildBlocks', () => {
 
     const rows = buildBlocks(lines).flatMap((block) => block.rows);
     expect(rows.map((row) => row.line)).toEqual(lines);
+  });
+});
+
+describe('flattenBlocks', () => {
+  it('interleaves day separators with their rows', () => {
+    const items = flattenBlocks(
+      buildBlocks([line({ timestamp: BASE }), line({ timestamp: BASE + 86400 })]),
+    );
+
+    expect(items.map((item) => item.kind)).toEqual(['day', 'row', 'day', 'row']);
+  });
+
+  it('omits separators for blocks that continue a day', () => {
+    const items = flattenBlocks(
+      buildBlocks([line({ timestamp: BASE }), line({ nick: 'bob', timestamp: BASE + 1 })]),
+    );
+
+    expect(items.map((item) => item.kind)).toEqual(['day', 'row', 'row']);
+  });
+
+  it('gives every item a unique key', () => {
+    const items = flattenBlocks(
+      buildBlocks([
+        line({ timestamp: BASE }),
+        line({ timestamp: BASE + 1 }),
+        line({ timestamp: BASE + 86400 }),
+      ]),
+    );
+
+    const keys = items.map((item) => item.key);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it('produces one row item per line', () => {
+    const lines = [
+      line({ timestamp: BASE }),
+      line({ timestamp: BASE + 1 }),
+      line({ timestamp: BASE + 2 }),
+    ];
+    const items = flattenBlocks(buildBlocks(lines));
+
+    expect(items.filter((item) => item.kind === 'row')).toHaveLength(lines.length);
   });
 });
