@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/lib/cn';
 import type { ConnectionState } from '@/lib/ipc';
-import type { SessionBuffer } from '@/store/session';
+import { useSessionStore, type SessionBuffer } from '@/store/session';
 
 const STATE_DOT: Record<ConnectionState, string> = {
   connecting: 'animate-pulse bg-warning',
@@ -19,14 +19,16 @@ export interface TopicBarProps {
 }
 
 /**
- * The strip above the message list.
- *
- * For now it carries the buffer identity and connection state. The real channel
- * topic arrives with the channel model in M2; showing a fake one would be worse
- * than showing none.
+ * The strip above the message list: which buffer, what the channel's topic is,
+ * and how the connection is doing.
  */
 export function TopicBar({ buffer, networkName, state }: TopicBarProps) {
   const { t } = useTranslation();
+
+  // Only channels carry a topic and modes; the server buffer and queries do not.
+  const channel = useSessionStore((store) =>
+    buffer && buffer.kind === 'channel' ? (store.channels[buffer.id] ?? null) : null,
+  );
 
   const isServer = buffer === null || buffer.kind === 'server';
 
@@ -36,11 +38,12 @@ export function TopicBar({ buffer, networkName, state }: TopicBarProps) {
       ? (networkName ?? t('sidebar.server'))
       : buffer.target;
 
-  const hint = !buffer
-    ? t('network.title')
-    : isServer
-      ? t('topic.serverBuffer')
-      : t('topic.channelHint');
+  const subtitle = (() => {
+    if (!buffer) return t('network.title');
+    if (isServer) return t('topic.serverBuffer');
+    if (buffer.kind === 'channel') return channel?.topic ?? t('topic.noTopic');
+    return buffer.target;
+  })();
 
   return (
     <div className="flex h-10 shrink-0 items-center gap-2 border-b border-line bg-topicbar px-3">
@@ -51,6 +54,15 @@ export function TopicBar({ buffer, networkName, state }: TopicBarProps) {
         {isServer && buffer ? <Server className="size-3.5 text-faint" strokeWidth={2.5} /> : null}
         <span className="max-w-[28ch] truncate">{title}</span>
       </span>
+
+      {channel && channel.modes ? (
+        <span
+          className="shrink-0 rounded bg-subtle px-1.5 py-0.5 font-mono text-[10.5px] text-muted"
+          title={t('topic.modes')}
+        >
+          {channel.modes}
+        </span>
+      ) : null}
 
       {state ? (
         <span className="flex shrink-0 items-center gap-1.5">
@@ -63,8 +75,8 @@ export function TopicBar({ buffer, networkName, state }: TopicBarProps) {
         |
       </span>
 
-      <p className="min-w-0 flex-1 truncate text-[12.5px] text-muted" title={hint}>
-        {hint}
+      <p className="min-w-0 flex-1 truncate text-[12.5px] text-muted" title={subtitle}>
+        {subtitle}
       </p>
     </div>
   );

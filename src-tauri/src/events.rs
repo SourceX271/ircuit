@@ -126,3 +126,46 @@ pub struct NetworkBacklog {
     /// Oldest first.
     pub traffic: Vec<RawTraffic>,
 }
+
+/// One member of a channel, as the UI needs them.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct MemberInfo {
+    pub nick: String,
+    /// Highest privilege prefix, e.g. `@`. `None` for an ordinary member.
+    pub prefix: Option<String>,
+    pub away: bool,
+    /// Services account, when the server told us.
+    pub account: Option<String>,
+}
+
+/// The full state of one channel.
+///
+/// Snapshots rather than deltas: channel state is small, and a delta protocol
+/// would mean the UI could drift out of sync with no way to notice. A newer
+/// snapshot always replaces an older one, so a late or reordered delivery is
+/// harmless as long as `seq` is respected.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, tauri_specta::Event)]
+pub struct ChannelSnapshot {
+    pub network_id: String,
+    pub name: String,
+    pub topic: Option<String>,
+    /// Highest privilege first, then by nickname.
+    pub members: Vec<MemberInfo>,
+    /// Channel modes as a user would type them, e.g. `+nt`.
+    pub modes: String,
+    /// Whether the initial `NAMES` burst has finished.
+    ///
+    /// Until it has, an empty member list means "not asked yet", which the UI
+    /// must not render as "empty channel".
+    pub names_received: bool,
+    /// Monotonic per-network sequence; a newer snapshot always wins.
+    pub seq: u32,
+}
+
+/// A channel the client is no longer in.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, tauri_specta::Event)]
+pub struct ChannelClosed {
+    pub network_id: String,
+    pub name: String,
+    pub seq: u32,
+}

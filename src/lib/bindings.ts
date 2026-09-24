@@ -23,6 +23,8 @@ export const commands = {
 	 *  handshake when the connection was opened at startup.
 	 */
 	getNetworkBacklog: (networkId: string) => typedError<NetworkBacklog, string>(__TAURI_INVOKE("get_network_backlog", { networkId })),
+	/**  The current state of every channel on a network. */
+	listChannels: (networkId: string) => typedError<ChannelSnapshot[], string>(__TAURI_INVOKE("list_channels", { networkId })),
 	/**  Send a message to a channel or user. */
 	sendMessage: (networkId: string, target: string, text: string) => typedError<null, string>(__TAURI_INVOKE("send_message", { networkId, target, text })),
 	/**  Join a channel. */
@@ -33,6 +35,8 @@ export const commands = {
 
 /** Events */
 export const events = {
+	channelClosed: makeEvent<ChannelClosed>("channel-closed"),
+	channelSnapshot: makeEvent<ChannelSnapshot>("channel-snapshot"),
 	coreStatus: makeEvent<CoreStatus>("core-status"),
 	incomingMessage: makeEvent<IncomingMessage>("incoming-message"),
 	networkStatus: makeEvent<NetworkStatus>("network-status"),
@@ -54,6 +58,40 @@ export type AppInfo = {
 	arch: string,
 	/**  Whether this is a debug build. */
 	debug: boolean,
+};
+
+/**  A channel the client is no longer in. */
+export type ChannelClosed = {
+	network_id: string,
+	name: string,
+	seq: number,
+};
+
+/**
+ *  The full state of one channel.
+ * 
+ *  Snapshots rather than deltas: channel state is small, and a delta protocol
+ *  would mean the UI could drift out of sync with no way to notice. A newer
+ *  snapshot always replaces an older one, so a late or reordered delivery is
+ *  harmless as long as `seq` is respected.
+ */
+export type ChannelSnapshot = {
+	network_id: string,
+	name: string,
+	topic: string | null,
+	/**  Highest privilege first, then by nickname. */
+	members: MemberInfo[],
+	/**  Channel modes as a user would type them, e.g. `+nt`. */
+	modes: string,
+	/**
+	 *  Whether the initial `NAMES` burst has finished.
+	 * 
+	 *  Until it has, an empty member list means "not asked yet", which the UI
+	 *  must not render as "empty channel".
+	 */
+	names_received: boolean,
+	/**  Monotonic per-network sequence; a newer snapshot always wins. */
+	seq: number,
 };
 
 /**  Where a connection is in its lifecycle. */
@@ -119,6 +157,16 @@ export type IncomingMessage = {
 	 *  its sequence is newer than the last one seen.
 	 */
 	seq: number,
+};
+
+/**  One member of a channel, as the UI needs them. */
+export type MemberInfo = {
+	nick: string,
+	/**  Highest privilege prefix, e.g. `@`. `None` for an ordinary member. */
+	prefix: string | null,
+	away: boolean,
+	/**  Services account, when the server told us. */
+	account: string | null,
 };
 
 /**  How a line should be presented. */

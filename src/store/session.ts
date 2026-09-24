@@ -14,6 +14,8 @@
 import { create } from 'zustand';
 
 import type {
+  ChannelClosed,
+  ChannelSnapshot,
   IncomingMessage,
   MessageKind,
   NetworkStatus,
@@ -167,11 +169,21 @@ export interface SessionState {
    * without having to order the two operations.
    */
   lastSeq: Record<string, number>;
+  /**
+   * Channel state per buffer id.
+   *
+   * Snapshots rather than deltas: the backend sends the whole channel every time
+   * it changes, so a dropped or reordered event can never leave the member list
+   * subtly wrong — an older snapshot simply loses to a newer one.
+   */
+  channels: Record<string, ChannelSnapshot>;
 
   setNetworks: (networks: NetworkSummary[]) => void;
   applyNetworkStatus: (status: NetworkStatus) => void;
   applyMessage: (message: IncomingMessage) => void;
   applyTraffic: (traffic: RawTraffic) => void;
+  applyChannelSnapshot: (snapshot: ChannelSnapshot) => void;
+  applyChannelClosed: (closed: ChannelClosed) => void;
   selectBuffer: (id: string) => void;
   removeNetwork: (networkId: string) => void;
 }
@@ -183,6 +195,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   traffic: {},
   activeBufferId: null,
   lastSeq: {},
+  channels: {},
 
   setNetworks: (networks) => {
     set((state) => {
@@ -320,6 +333,34 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }));
   },
 
+  applyChannelSnapshot: (snapshot) => {
+    set((state) => {
+      const id = bufferId(snapshot.network_id, snapshot.name);
+      const existing = state.channels[id];
+
+      // Snapshots carry the same clock as messages, so an older one arriving
+      // late must not clobber a newer one.
+      if (existing && existing.seq > snapshot.seq) return {};
+
+      return { channels: { ...state.channels, [id]: snapshot } };
+    });
+  },
+
+  applyChannelClosed: (closed) => {
+    set((state) => {
+      const id = bufferId(closed.network_id, closed.name);
+      const existing = state.channels[id];
+      if (existing && existing.seq > closed.seq) return {};
+
+      const channels = { ...state.channels };
+      delete channels[id];
+
+      // The buffer itself stays: the part or kick is already in its history and
+      // the user may still want to read it.
+      return { channels };
+    });
+  },
+
   removeNetwork: (networkId) => {
     set((state) => {
       const buffers = state.buffers.filter((buffer) => buffer.networkId !== networkId);
@@ -335,6 +376,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       const lastSeq = { ...state.lastSeq };
       delete lastSeq[networkId];
 
+      const channels: Record<string, ChannelSnapshot> = {};
+      for (const [id, value] of Object.entries(state.channels)) {
+        if (parseBufferId(id).networkId !== networkId) channels[id] = value;
+      }
+
       const activeStillExists = buffers.some((buffer) => buffer.id === state.activeBufferId);
 
       return {
@@ -343,6 +389,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         lines,
         traffic,
         lastSeq,
+        channels,
         activeBufferId: activeStillExists ? state.activeBufferId : (buffers[0]?.id ?? null),
       };
     });

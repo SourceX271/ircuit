@@ -2,7 +2,10 @@ import { useEffect } from 'react';
 
 import {
   getNetworkBacklog,
+  listChannels,
   listNetworks,
+  onChannelClosed,
+  onChannelSnapshot,
   onIncomingMessage,
   onNetworkStatus,
   onRawTraffic,
@@ -33,6 +36,8 @@ export function useSessionBridge(): void {
   const applyNetworkStatus = useSessionStore((state) => state.applyNetworkStatus);
   const applyMessage = useSessionStore((state) => state.applyMessage);
   const applyTraffic = useSessionStore((state) => state.applyTraffic);
+  const applyChannelSnapshot = useSessionStore((state) => state.applyChannelSnapshot);
+  const applyChannelClosed = useSessionStore((state) => state.applyChannelClosed);
 
   useEffect(() => {
     let cancelled = false;
@@ -52,6 +57,8 @@ export function useSessionBridge(): void {
     track(onNetworkStatus(applyNetworkStatus));
     track(onIncomingMessage(applyMessage));
     track(onRawTraffic(applyTraffic));
+    track(onChannelSnapshot(applyChannelSnapshot));
+    track(onChannelClosed(applyChannelClosed));
 
     void (async () => {
       try {
@@ -79,6 +86,13 @@ export function useSessionBridge(): void {
           ].sort((left, right) => left.seq - right.seq);
 
           for (const entry of replay) entry.apply();
+
+          // Channel snapshots are state rather than a stream, so they are simply
+          // taken as-is; the seq comparison inside the store handles overlap with
+          // anything that arrived live.
+          const channels = await listChannels(network.id);
+          if (cancelled) return;
+          for (const channel of channels) applyChannelSnapshot(channel);
         }
       } catch (error) {
         console.error('[ircuit] 读取网络状态失败', error);
@@ -89,5 +103,12 @@ export function useSessionBridge(): void {
       cancelled = true;
       for (const stop of stops) stop();
     };
-  }, [setNetworks, applyNetworkStatus, applyMessage, applyTraffic]);
+  }, [
+    setNetworks,
+    applyNetworkStatus,
+    applyMessage,
+    applyTraffic,
+    applyChannelSnapshot,
+    applyChannelClosed,
+  ]);
 }

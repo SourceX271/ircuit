@@ -15,10 +15,13 @@ import {
   commands,
   events,
   type AppInfo,
+  type ChannelClosed,
+  type ChannelSnapshot,
   type ConnectionState,
   type CoreModule,
   type CoreStatus,
   type IncomingMessage,
+  type MemberInfo,
   type MessageKind,
   type NetworkBacklog,
   type NetworkRequest,
@@ -30,10 +33,13 @@ import {
 
 export type {
   AppInfo,
+  ChannelClosed,
+  ChannelSnapshot,
   ConnectionState,
   CoreModule,
   CoreStatus,
   IncomingMessage,
+  MemberInfo,
   MessageKind,
   NetworkBacklog,
   NetworkRequest,
@@ -123,4 +129,21 @@ export function onIncomingMessage(
 /** 订阅原始协议流量（双向）。 */
 export function onRawTraffic(handler: (traffic: RawTraffic) => void): Promise<UnlistenFn> {
   return events.rawTraffic.listen((event) => handler(event.payload));
+}
+
+/** 订阅频道状态快照。 */
+export function onChannelSnapshot(
+  handler: (snapshot: ChannelSnapshot) => void,
+): Promise<UnlistenFn> {
+  return events.channelSnapshot.listen((event) => handler(event.payload));
+}
+
+/** 订阅频道关闭（自己离开或被踢出）。 */
+export function onChannelClosed(handler: (closed: ChannelClosed) => void): Promise<UnlistenFn> {
+  return events.channelClosed.listen((event) => handler(event.payload));
+}
+
+/** 取某个网络当前的频道状态。 */
+export function listChannels(networkId: string): Promise<ChannelSnapshot[]> {
+  return unwrap(commands.listChannels(networkId));
 }

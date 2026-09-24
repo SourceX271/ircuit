@@ -19,11 +19,14 @@ use ircuit_client::{
     command_to_lines, spawn, BackoffPolicy, ClientCommand, ConnectionConfig, NetworkEvent,
     NetworkHandle, SaslConfig, TlsMode,
 };
+use ircuit_proto::Message;
+use ircuit_state::channel::{Channel, StateChange};
 use ircuit_state::view::{self, MessageKind as ViewMessageKind};
+use ircuit_state::ChannelState;
 
 use crate::events::{
-    ConnectionState, CoreStatus, IncomingMessage, MessageKind, NetworkBacklog, NetworkStatus,
-    RawTraffic, TrafficDirection,
+    ChannelClosed, ChannelSnapshot, ConnectionState, CoreStatus, IncomingMessage, MemberInfo,
+    MessageKind, NetworkBacklog, NetworkStatus, RawTraffic, TrafficDirection,
 };
 
 /// How often the core status heartbeat fires.
@@ -68,6 +71,8 @@ struct Entry {
     traffic: VecDeque<RawTraffic>,
     /// Sequence counter shared by both streams of this network.
     seq: u32,
+    /// Channel and membership state, fed every inbound message.
+    channel_state: ChannelState,
 }
 
 /// How many recent events to keep per network for replay.
@@ -149,6 +154,7 @@ impl NetworkManager {
                 messages: VecDeque::new(),
                 traffic: VecDeque::new(),
                 seq: 0,
+                channel_state: ChannelState::new(config.nick.clone()),
             },
         );
 
@@ -271,6 +277,115 @@ impl NetworkManager {
         })
     }
 
+    /// The current state of every channel on a network.
+    ///
+    /// Used for the initial load; afterwards the UI follows the snapshot events.
+    pub async fn channel_snapshots(&self, network_id: &str) -> Option<Vec<ChannelSnapshot>> {
+        let networks = self.networks.lock().await;
+        let entry = networks.get(network_id)?;
+
+        Some(
+            entry
+                .channel_state
+                .channels
+                .values()
+                .map(|channel| build_snapshot(network_id, channel, &entry.channel_state, entry.seq))
+                .collect(),
+        )
+    }
+
+    /// The nickname the server knows us by, for this network's channel state.
+    async fn set_channel_nick(&self, network_id: &str, nick: &str) {
+        let mut networks = self.networks.lock().await;
+        if let Some(entry) = networks.get_mut(network_id) {
+            entry.channel_state.set_nick(nick);
+        }
+    }
+
+    /// Feed one inbound message to the channel model and push what changed.
+    ///
+    /// `self_nick` is updated when the server renames us, since message
+    /// normalization depends on knowing which lines are our own.
+    async fn apply_channel_state(
+        &self,
+        app: &AppHandle,
+        network_id: &str,
+        message: &Message,
+        self_nick: &mut String,
+    ) {
+        let updates = {
+            let mut networks = self.networks.lock().await;
+            let Some(entry) = networks.get_mut(network_id) else {
+                return;
+            };
+
+            let changes = entry.channel_state.apply(message);
+            if changes.is_empty() {
+                return;
+            }
+
+            // A QUIT or an ISUPPORT change can touch every channel, so collect
+            // names rather than assuming one channel per message.
+            let mut changed: Vec<String> = Vec::new();
+            let mut closed: Vec<String> = Vec::new();
+
+            for change in changes {
+                match change {
+                    StateChange::Channel(name) => changed.push(name),
+                    StateChange::ChannelRemoved(name) => closed.push(name),
+                    StateChange::Nick(nick) => {
+                        *self_nick = nick;
+                        changed.extend(channel_names(&entry.channel_state));
+                    }
+                    StateChange::AllChannels | StateChange::Isupport => {
+                        changed.extend(channel_names(&entry.channel_state));
+                    }
+                }
+            }
+
+            if changed.is_empty() && closed.is_empty() {
+                return;
+            }
+
+            entry.seq = entry.seq.wrapping_add(1);
+            let seq = entry.seq;
+
+            let mut updates: Vec<ChannelUpdate> = changed
+                .iter()
+                .filter_map(|name| entry.channel_state.channel(name))
+                .map(|channel| {
+                    ChannelUpdate::Changed(build_snapshot(
+                        network_id,
+                        channel,
+                        &entry.channel_state,
+                        seq,
+                    ))
+                })
+                .collect();
+
+            updates.extend(closed.into_iter().map(|name| {
+                ChannelUpdate::Closed(ChannelClosed {
+                    network_id: network_id.to_owned(),
+                    name,
+                    seq,
+                })
+            }));
+
+            updates
+        };
+
+        for update in updates {
+            match update {
+                ChannelUpdate::Changed(snapshot) => {
+                    let _ = snapshot.emit(app);
+                }
+                ChannelUpdate::Closed(closed) => {
+                    let _ = closed.emit(app);
+                }
+            }
+        }
+    }
+
     /// How many networks are registered, for the heartbeat.
     pub async fn registered_count(&self) -> u32 {
         let networks = self.networks.lock().await;
@@ -333,6 +448,7 @@ async fn pump(
 
             NetworkEvent::Registered { nick, .. } => {
                 self_nick.clone_from(&nick);
+                manager.set_channel_nick(&network_id, &nick).await;
                 manager
                     .mutate(&app, &network_id, |summary| {
                         summary.state = ConnectionState::Registered;
@@ -390,6 +506,13 @@ async fn pump(
                     let _ = incoming.clone().emit(&app);
                     manager.record_message(&network_id, incoming).await;
                 }
+
+                // Channel state last: a NICK of our own updates `self_nick`, and
+                // the message that carried it must still be attributed to the old
+                // nickname.
+                manager
+                    .apply_channel_state(&app, &network_id, &message, &mut self_nick)
+                    .await;
             }
         }
     }
@@ -575,6 +698,51 @@ pub fn maybe_autoconnect(app: AppHandle, manager: Arc<NetworkManager>) {
 
         warn!("autoconnect gave up waiting for registration");
     });
+}
+
+/// A channel-state change to push to the UI.
+enum ChannelUpdate {
+    Changed(ChannelSnapshot),
+    Closed(ChannelClosed),
+}
+
+fn channel_names(state: &ChannelState) -> Vec<String> {
+    state
+        .channels
+        .values()
+        .map(|channel| channel.name.clone())
+        .collect()
+}
+
+/// Project the internal channel model onto what the UI needs.
+fn build_snapshot(
+    network_id: &str,
+    channel: &Channel,
+    state: &ChannelState,
+    seq: u32,
+) -> ChannelSnapshot {
+    let members = channel
+        .sorted_members(&state.isupport)
+        .into_iter()
+        .map(|member| MemberInfo {
+            nick: member.nick.clone(),
+            prefix: member
+                .highest_prefix(&state.isupport)
+                .map(|prefix| prefix.to_string()),
+            away: member.away,
+            account: member.account.clone(),
+        })
+        .collect();
+
+    ChannelSnapshot {
+        network_id: network_id.to_owned(),
+        name: channel.name.clone(),
+        topic: channel.topic.clone(),
+        members,
+        modes: channel.mode_string(),
+        names_received: channel.names_received,
+        seq,
+    }
 }
 
 #[cfg(test)]

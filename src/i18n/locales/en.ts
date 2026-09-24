@@ -8,7 +8,7 @@ export const en: TranslationSchema = {
   },
 
   shell: {
-    milestone: 'M1 · Protocol core',
+    milestone: 'M2 · Session UI',
   },
 
   a11y: {
@@ -58,12 +58,23 @@ export const en: TranslationSchema = {
     noTopic: '(no topic set)',
     serverBuffer: 'Raw protocol traffic',
     channelHint: 'Type /join #channel to join a channel',
+    modes: 'Channel modes',
   },
 
   members: {
     title: 'Members',
     count: '{{count}} members',
-    unavailable: 'The member list arrives in M2',
+    loading: 'Fetching the member list…',
+    notAChannel: 'No member list here',
+    away: 'Away',
+    identified: 'Identified to services',
+    prefix: {
+      owner: 'Owner',
+      admin: 'Admin',
+      halfop: 'Half-op',
+      op: 'Operator',
+      voice: 'Voice',
+    },
   },
 
   composer: {

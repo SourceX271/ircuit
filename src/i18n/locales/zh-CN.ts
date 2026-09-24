@@ -9,7 +9,7 @@ export const zhCN = {
   },
 
   shell: {
-    milestone: 'M1 · 协议内核',
+    milestone: 'M2 · 会话 UI',
   },
 
   a11y: {
@@ -59,12 +59,23 @@ export const zhCN = {
     noTopic: '（无主题）',
     serverBuffer: '原始协议流量',
     channelHint: '输入 /join #频道 加入频道',
+    modes: '频道模式',
   },
 
   members: {
     title: '成员',
     count: '{{count}} 人',
-    unavailable: 'M2 起提供成员列表',
+    loading: '正在获取成员列表…',
+    notAChannel: '这里没有成员列表',
+    away: '离开',
+    identified: '已登录服务',
+    prefix: {
+      owner: '所有者',
+      admin: '管理员',
+      halfop: '半权限',
+      op: '操作员',
+      voice: '语音',
+    },
   },
 
   composer: {

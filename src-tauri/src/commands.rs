@@ -12,7 +12,7 @@ use tauri::{AppHandle, State};
 
 use ircuit_client::ClientCommand;
 
-use crate::events::NetworkBacklog;
+use crate::events::{ChannelSnapshot, NetworkBacklog};
 use crate::net::{NetworkManager, NetworkRequest, NetworkSummary};
 
 /// Application and runtime information.
@@ -132,6 +132,20 @@ pub async fn get_network_backlog(
     manager
         .inner()
         .backlog(&network_id)
+        .await
+        .ok_or_else(|| format!("no such network: {network_id}"))
+}
+
+/// The current state of every channel on a network.
+#[tauri::command]
+#[specta::specta]
+pub async fn list_channels(
+    manager: State<'_, Arc<NetworkManager>>,
+    network_id: String,
+) -> Result<Vec<ChannelSnapshot>, String> {
+    manager
+        .inner()
+        .channel_snapshots(&network_id)
         .await
         .ok_or_else(|| format!("no such network: {network_id}"))
 }

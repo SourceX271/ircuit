@@ -424,10 +424,11 @@ impl ServerSession {
         let nick = self.nick.clone().unwrap_or_else(|| "*".to_owned());
 
         // The greeting is not decoration: it gives a manual tester (or a visual
-        // check) something to look at without needing a second client.
+        // check) something to look at without needing a second client. The NAMES
+        // burst carries prefixes so the member list has something to render.
         vec![
             format!(":{nick}!user@host JOIN {channel}"),
-            format!(":{SERVER_NAME} 353 {nick} = {channel} :@{nick} alice bob"),
+            format!(":{SERVER_NAME} 353 {nick} = {channel} :@{nick} alice +bob"),
             format!(":{SERVER_NAME} 366 {nick} {channel} :End of /NAMES list."),
             format!(":alice!alice@host PRIVMSG {channel} :Welcome to {channel}, {nick}!"),
             format!(":bob!bob@host PRIVMSG {channel} :hi {nick}, this is a mock server"),

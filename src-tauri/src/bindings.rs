@@ -22,6 +22,7 @@ pub fn builder() -> Builder<tauri::Wry> {
             crate::commands::disconnect_network,
             crate::commands::list_networks,
             crate::commands::get_network_backlog,
+            crate::commands::list_channels,
             crate::commands::send_message,
             crate::commands::join_channel,
             crate::commands::send_raw_command,
@@ -31,6 +32,8 @@ pub fn builder() -> Builder<tauri::Wry> {
             crate::events::NetworkStatus,
             crate::events::IncomingMessage,
             crate::events::RawTraffic,
+            crate::events::ChannelSnapshot,
+            crate::events::ChannelClosed,
         ])
 }
 
