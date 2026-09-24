@@ -8,8 +8,17 @@ license.workspace = true
 
 [dependencies]
 ircuit-proto = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+
+base64 = { workspace = true }
+rustls = { workspace = true }
+tokio-rustls = { workspace = true }
+webpki-roots = { workspace = true }
+
+[dev-dependencies]
+ircuit-testserver = { workspace = true }
 
 [lints]
 workspace = true

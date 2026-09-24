@@ -8,6 +8,7 @@ members = [
   "crates/ircuit-storage",
   "crates/ircuit-dcc",
   "crates/ircuit-plugin",
+  "crates/ircuit-testserver",
   "src-tauri",
 ]
 
@@ -27,6 +28,7 @@ ircuit-encoding = { path = "crates/ircuit-encoding" }
 ircuit-storage = { path = "crates/ircuit-storage" }
 ircuit-dcc = { path = "crates/ircuit-dcc" }
 ircuit-plugin = { path = "crates/ircuit-plugin" }
+ircuit-testserver = { path = "crates/ircuit-testserver" }
 
 # ---- 外部 crate（版本集中管理，避免各 crate 之间漂移）----
 serde = { version = "1.0.229", features = ["derive"] }
@@ -43,6 +45,23 @@ tokio = { version = "1.53.1", features = [
 ] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+
+# TLS。刻意选择 ring 而不是默认的 aws-lc-rs：后者在 Windows 上需要额外的
+# NASM 才能编译汇编优化，会给三平台构建平添一个工具链依赖。
+rustls = { version = "0.23.45", default-features = false, features = [
+  "ring",
+  "std",
+  "tls12",
+  "logging",
+] }
+tokio-rustls = { version = "0.26.5", default-features = false, features = [
+  "ring",
+  "tls12",
+  "logging",
+] }
+# 内置 Mozilla 根证书。系统证书库与自签证书例外按计划在 M4 处理。
+webpki-roots = "1.0.9"
+base64 = "0.23.1"
 
 # ---- Lint 基线：全工作区统一 ----
 [workspace.lints.rust]
