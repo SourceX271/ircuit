@@ -24,6 +24,23 @@ function message(overrides: Partial<IncomingMessage> = {}): IncomingMessage {
     kind: 'message',
     target: '#rust',
     text: 'hello',
+    segments: [
+      {
+        text: 'hello',
+        style: {
+          bold: false,
+          italic: false,
+          underline: false,
+          strikethrough: false,
+          monospace: false,
+          reverse: false,
+          fg_index: null,
+          bg_index: null,
+          fg_hex: null,
+          bg_hex: null,
+        },
+      },
+    ],
     timestamp: 1_700_000_000,
     is_self: false,
     seq: nextSeq++,

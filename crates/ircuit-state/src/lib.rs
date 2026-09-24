@@ -15,3 +15,7 @@ pub use channel::{
     CaseMapping, Channel, Isupport, Member, NetworkState as ChannelState, StateChange,
 };
 pub use view::{normalize, parse_server_time, MessageKind, ViewMessage};
+
+/// Re-exported so consumers of [`ViewMessage::segments`] do not have to depend
+/// on `ircuit-proto` directly.
+pub use ircuit_proto::formatting::{Color as MessageColor, Segment as MessageSegment};

@@ -8,6 +8,9 @@
 //!
 //! It is pure and takes "now" as an argument so the tests are deterministic.
 
+use ircuit_proto::formatting::{
+    parse as parse_formatting, strip as strip_formatting, Segment, Style,
+};
 use ircuit_proto::{Command, Message, Prefix};
 
 /// What kind of line this is, from the reader's point of view.
@@ -32,7 +35,17 @@ pub struct ViewMessage {
     pub kind: MessageKind,
     /// The channel or user the line belongs to.
     pub target: String,
+    /// The line with formatting codes removed.
+    ///
+    /// This is what search, notifications and log export use: markup is noise
+    /// there.
     pub text: String,
+    /// The same line with mIRC formatting preserved, for rendering.
+    ///
+    /// Colour values stay exactly as the protocol expressed them — a palette
+    /// index or a 24-bit value. Deciding what those *look like* belongs to the
+    /// theme, not to the protocol layer.
+    pub segments: Vec<Segment>,
     /// Unix seconds, from the `server-time` tag when the server provides one.
     pub timestamp: u32,
     /// Whether this line was sent by us.
@@ -45,6 +58,14 @@ impl ViewMessage {
     pub fn is_activity(&self) -> bool {
         !self.is_self && matches!(self.kind, MessageKind::Message | MessageKind::Action)
     }
+}
+
+/// A single unstyled run, for lines that carry no formatting.
+fn plain_segment(text: &str) -> Vec<Segment> {
+    vec![Segment {
+        text: text.to_owned(),
+        style: Style::default(),
+    }]
 }
 
 /// CTCP messages are wrapped in this byte.
@@ -77,7 +98,8 @@ pub fn normalize(self_nick: Option<&str>, message: &Message, now: u32) -> Option
                     nick,
                     kind: MessageKind::Action,
                     target,
-                    text: action.to_owned(),
+                    text: strip_formatting(action),
+                    segments: parse_formatting(action),
                     timestamp,
                     is_self,
                 }),
@@ -88,7 +110,8 @@ pub fn normalize(self_nick: Option<&str>, message: &Message, now: u32) -> Option
                     nick,
                     kind: MessageKind::Message,
                     target,
-                    text: body.to_owned(),
+                    text: strip_formatting(body),
+                    segments: parse_formatting(body),
                     timestamp,
                     is_self,
                 }),
@@ -113,7 +136,8 @@ pub fn normalize(self_nick: Option<&str>, message: &Message, now: u32) -> Option
                 nick,
                 kind: MessageKind::Notice,
                 target: if from_server { String::new() } else { target },
-                text: body.to_owned(),
+                text: strip_formatting(body),
+                segments: parse_formatting(body),
                 timestamp,
                 is_self,
             })
@@ -211,6 +235,7 @@ fn system(nick: &str, target: &str, text: String, timestamp: u32) -> ViewMessage
         nick: nick.to_owned(),
         kind: MessageKind::System,
         target: target.to_owned(),
+        segments: plain_segment(&text),
         text,
         timestamp,
         is_self: false,
@@ -440,5 +465,50 @@ mod tests {
         // PRIVMSG with no parameters is malformed; it must not panic.
         let malformed = Message::new(Command::Privmsg, Vec::<String>::new());
         assert!(normalize(None, &malformed, NOW).is_none());
+    }
+
+    #[test]
+    fn formatting_is_preserved_in_segments_and_stripped_from_text() {
+        // Bold and a colour, then plain text: three runs.
+        let line = ":alice!a@h PRIVMSG #c :\u{0002}\u{0003}4bold red\u{000F} plain";
+        let view = normalize(None, &message(line), NOW).unwrap();
+
+        assert_eq!(view.text, "bold red plain");
+        assert_eq!(view.segments.len(), 2);
+        assert!(view.segments[0].style.bold);
+        assert_eq!(
+            view.segments[0].style.fg,
+            Some(ircuit_proto::Color::Indexed(4))
+        );
+        assert_eq!(view.segments[1].text, " plain");
+        assert!(view.segments[1].style.is_plain());
+    }
+
+    #[test]
+    fn a_line_without_formatting_is_a_single_plain_segment() {
+        let view = normalize(None, &message(":alice!a@h PRIVMSG #c :hello"), NOW).unwrap();
+
+        assert_eq!(view.segments.len(), 1);
+        assert!(view.segments[0].style.is_plain());
+        assert_eq!(view.segments[0].text, "hello");
+    }
+
+    #[test]
+    fn a_ctcp_action_keeps_its_formatting() {
+        let line = ":alice!a@h PRIVMSG #c :\u{0001}ACTION \u{001D}waves\u{0001}";
+        let view = normalize(None, &message(line), NOW).unwrap();
+
+        assert_eq!(view.kind, MessageKind::Action);
+        assert_eq!(view.text, "waves");
+        assert!(view.segments[0].style.italic);
+    }
+
+    #[test]
+    fn system_lines_carry_one_plain_segment() {
+        let view = normalize(None, &message(":alice!a@h JOIN #rust"), NOW).unwrap();
+
+        assert_eq!(view.segments.len(), 1);
+        assert!(view.segments[0].style.is_plain());
+        assert_eq!(view.segments[0].text, view.text);
     }
 }

@@ -26,7 +26,8 @@ use ircuit_state::ChannelState;
 
 use crate::events::{
     ChannelClosed, ChannelSnapshot, ConnectionState, CoreStatus, IncomingMessage, MemberInfo,
-    MessageKind, NetworkBacklog, NetworkStatus, RawTraffic, TrafficDirection,
+    MessageKind, MessageSegment, MessageStyle, NetworkBacklog, NetworkStatus, RawTraffic,
+    TrafficDirection,
 };
 
 /// How often the core status heartbeat fires.
@@ -499,6 +500,7 @@ async fn pump(
                         kind: convert_kind(normalized.kind),
                         target: normalized.target,
                         text: normalized.text,
+                        segments: convert_segments(&normalized.segments),
                         timestamp: normalized.timestamp,
                         is_self: normalized.is_self,
                         seq: manager.next_seq(&network_id).await,
@@ -533,6 +535,44 @@ fn convert_kind(kind: ViewMessageKind) -> MessageKind {
         ViewMessageKind::Notice => MessageKind::Notice,
         ViewMessageKind::Action => MessageKind::Action,
         ViewMessageKind::System => MessageKind::System,
+    }
+}
+
+/// Project protocol formatting onto the flat shape the UI consumes.
+fn convert_segments(segments: &[ircuit_state::MessageSegment]) -> Vec<MessageSegment> {
+    segments
+        .iter()
+        .map(|segment| {
+            let (fg_index, fg_hex) = split_color(segment.style.fg);
+            let (bg_index, bg_hex) = split_color(segment.style.bg);
+
+            MessageSegment {
+                text: segment.text.clone(),
+                style: MessageStyle {
+                    bold: segment.style.bold,
+                    italic: segment.style.italic,
+                    underline: segment.style.underline,
+                    strikethrough: segment.style.strikethrough,
+                    monospace: segment.style.monospace,
+                    reverse: segment.style.reverse,
+                    fg_index,
+                    bg_index,
+                    fg_hex,
+                    bg_hex,
+                },
+            }
+        })
+        .collect()
+}
+
+/// Colours arrive either as a palette index or as a 24-bit value; the renderer
+/// has to tell them apart, so they travel in separate fields rather than as a
+/// union the generated TypeScript would have to narrow.
+fn split_color(color: Option<ircuit_state::MessageColor>) -> (Option<u8>, Option<String>) {
+    match color {
+        Some(ircuit_state::MessageColor::Indexed(index)) => (Some(index), None),
+        Some(ircuit_state::MessageColor::Hex(value)) => (None, Some(format!("{value:06X}"))),
+        None => (None, None),
     }
 }
 

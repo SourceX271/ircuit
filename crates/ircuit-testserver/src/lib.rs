@@ -425,13 +425,20 @@ impl ServerSession {
 
         // The greeting is not decoration: it gives a manual tester (or a visual
         // check) something to look at without needing a second client. The NAMES
-        // burst carries prefixes so the member list has something to render.
+        // burst carries prefixes so the member list has something to render, and
+        // one line carries mIRC formatting so the renderer has something to
+        // style.
         vec![
             format!(":{nick}!user@host JOIN {channel}"),
-            format!(":{SERVER_NAME} 353 {nick} = {channel} :@{nick} alice +bob"),
+            format!(":{SERVER_NAME} 353 {nick} = {channel} :@{nick} alice +bob carol"),
             format!(":{SERVER_NAME} 366 {nick} {channel} :End of /NAMES list."),
             format!(":alice!alice@host PRIVMSG {channel} :Welcome to {channel}, {nick}!"),
             format!(":bob!bob@host PRIVMSG {channel} :hi {nick}, this is a mock server"),
+            format!(
+                ":carol!carol@host PRIVMSG {channel} :\u{0002}bold\u{0002}, \
+                 \u{001D}italic\u{001D}, \u{001F}underlined\u{001F}, \
+                 \u{0003}04red\u{0003} and \u{0003}09green\u{0003}"
+            ),
         ]
     }
 

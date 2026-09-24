@@ -79,6 +79,34 @@ pub struct NetworkStatus {
     pub attempt: u32,
 }
 
+/// Formatting for one run of a message.
+///
+/// Colours are reported exactly as the protocol expressed them — a palette index
+/// or a 24-bit value. Turning those into something that reads well on the
+/// current theme is the renderer's job, not the protocol layer's.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct MessageStyle {
+    pub bold: bool,
+    pub italic: bool,
+    pub underline: bool,
+    pub strikethrough: bool,
+    pub monospace: bool,
+    pub reverse: bool,
+    /// mIRC palette index, `0..=98`.
+    pub fg_index: Option<u8>,
+    pub bg_index: Option<u8>,
+    /// `RRGGBB`, from the hex colour extension.
+    pub fg_hex: Option<String>,
+    pub bg_hex: Option<String>,
+}
+
+/// One styled run of a message.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct MessageSegment {
+    pub text: String,
+    pub style: MessageStyle,
+}
+
 /// A line destined for a message list.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, tauri_specta::Event)]
 pub struct IncomingMessage {
@@ -88,7 +116,10 @@ pub struct IncomingMessage {
     pub kind: MessageKind,
     /// Channel or user this line belongs to.
     pub target: String,
+    /// The line with formatting codes removed, for search and notifications.
     pub text: String,
+    /// The same line with formatting preserved. Always at least one run.
+    pub segments: Vec<MessageSegment>,
     /// Unix seconds, from the `server-time` tag when available.
     pub timestamp: u32,
     /// Whether we sent it.

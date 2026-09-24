@@ -144,7 +144,10 @@ export type IncomingMessage = {
 	kind: MessageKind,
 	/**  Channel or user this line belongs to. */
 	target: string,
+	/**  The line with formatting codes removed, for search and notifications. */
 	text: string,
+	/**  The same line with formatting preserved. Always at least one run. */
+	segments: MessageSegment[],
 	/**  Unix seconds, from the `server-time` tag when available. */
 	timestamp: number,
 	/**  Whether we sent it. */
@@ -175,6 +178,34 @@ export type MessageKind = "message" | "notice" |
 "action" | 
 /**  Server-generated: joins, parts, kicks, mode changes. */
 "system";
+
+/**  One styled run of a message. */
+export type MessageSegment = {
+	text: string,
+	style: MessageStyle,
+};
+
+/**
+ *  Formatting for one run of a message.
+ * 
+ *  Colours are reported exactly as the protocol expressed them — a palette index
+ *  or a 24-bit value. Turning those into something that reads well on the
+ *  current theme is the renderer's job, not the protocol layer's.
+ */
+export type MessageStyle = {
+	bold: boolean,
+	italic: boolean,
+	underline: boolean,
+	strikethrough: boolean,
+	monospace: boolean,
+	reverse: boolean,
+	/**  mIRC palette index, `0..=98`. */
+	fg_index: number | null,
+	bg_index: number | null,
+	/**  `RRGGBB`, from the hex colour extension. */
+	fg_hex: string | null,
+	bg_hex: string | null,
+};
 
 /**
  *  Recently emitted events for one network, for a UI that subscribed late.

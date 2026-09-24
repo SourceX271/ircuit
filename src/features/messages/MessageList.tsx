@@ -2,13 +2,15 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/lib/cn';
-import type { MessageKind } from '@/lib/ipc';
+import type { MessageKind, MessageSegment } from '@/lib/ipc';
 import {
   parseBufferId,
   useSessionStore,
   type SessionLine,
   type TrafficLine,
 } from '@/store/session';
+
+import { isPlainMessage, segmentStyle } from './formatting';
 
 /** Nickname colours are indexed tokens, so the choice has to be inline. */
 function nickColor(nick: string): string {
@@ -31,13 +33,36 @@ const KIND_TEXT: Record<MessageKind, string> = {
   system: 'text-faint',
 };
 
+/**
+ * Render one message body.
+ *
+ * Plain lines skip the per-run spans entirely: most messages carry no
+ * formatting, and wrapping every one of them in a span is pure overhead.
+ */
+function Body({ segments, fallback }: { segments: MessageSegment[]; fallback: string }) {
+  if (segments.length === 0) return <>{fallback}</>;
+  if (isPlainMessage(segments)) return <>{segments.map((part) => part.text).join('')}</>;
+
+  return (
+    <>
+      {segments.map((part, index) => (
+        <span key={index} style={segmentStyle(part.style)}>
+          {part.text}
+        </span>
+      ))}
+    </>
+  );
+}
+
 function LineRow({ line }: { line: SessionLine }) {
   const isAction = line.kind === 'action';
 
   if (line.kind === 'system') {
     return (
       <div className="px-4 py-[3px]">
-        <p className="pl-[52px] text-[12.5px] text-faint">{line.text}</p>
+        <p className="pl-[52px] text-[12.5px] text-faint">
+          <Body segments={line.segments} fallback={line.text} />
+        </p>
       </div>
     );
   }
@@ -59,7 +84,7 @@ function LineRow({ line }: { line: SessionLine }) {
           <span className="font-semibold" style={{ color: nickColor(line.nick) }}>
             {line.nick}
           </span>{' '}
-          {line.text}
+          <Body segments={line.segments} fallback={line.text} />
         </p>
       ) : (
         <>
@@ -71,7 +96,7 @@ function LineRow({ line }: { line: SessionLine }) {
             {line.nick}
           </span>
           <p className={cn('min-w-0 flex-1 text-[14px] leading-[1.55]', KIND_TEXT[line.kind])}>
-            {line.text}
+            <Body segments={line.segments} fallback={line.text} />
           </p>
         </>
       )}

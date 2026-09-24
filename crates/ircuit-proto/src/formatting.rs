@@ -435,4 +435,39 @@ mod tests {
         assert_eq!(segments[0].text, "中文消息");
         assert!(segments[0].style.bold);
     }
+
+    /// Regenerate the UI's palette table.
+    ///
+    /// The renderer maps every mIRC index onto one of the 16 classic colours,
+    /// which the theme then tunes per light/dark. Computing that mapping here
+    /// keeps it derived from the single source of truth instead of transcribed
+    /// by hand into TypeScript:
+    ///
+    /// ```text
+    /// cargo test -p ircuit-proto -- --ignored --nocapture dump_palette_buckets
+    /// ```
+    #[test]
+    #[ignore = "codegen helper; prints the table used by the UI renderer"]
+    fn dump_palette_buckets() {
+        let buckets: Vec<String> = MIRC_PALETTE
+            .iter()
+            .map(|&(r, g, b)| {
+                let nearest = MIRC_PALETTE[..16]
+                    .iter()
+                    .enumerate()
+                    .min_by_key(|(_, &(cr, cg, cb))| {
+                        let dr = i32::from(r) - i32::from(cr);
+                        let dg = i32::from(g) - i32::from(cg);
+                        let db = i32::from(b) - i32::from(cb);
+                        dr * dr + dg * dg + db * db
+                    })
+                    .map(|(index, _)| index)
+                    .unwrap_or(0);
+
+                nearest.to_string()
+            })
+            .collect();
+
+        println!("{}", buckets.join(", "));
+    }
 }

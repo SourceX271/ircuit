@@ -18,6 +18,7 @@ import type {
   ChannelSnapshot,
   IncomingMessage,
   MessageKind,
+  MessageSegment,
   NetworkStatus,
   NetworkSummary,
   RawTraffic,
@@ -46,7 +47,10 @@ export interface SessionLine {
   id: string;
   nick: string;
   kind: MessageKind;
+  /** Plain text with formatting removed, for search and notifications. */
   text: string;
+  /** The same line with formatting preserved, for rendering. */
+  segments: MessageSegment[];
   /** Unix seconds. */
   timestamp: number;
   isSelf: boolean;
@@ -257,6 +261,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       nick: message.nick,
       kind: message.kind,
       text: message.text,
+      segments: message.segments,
       timestamp: message.timestamp,
       isSelf: message.is_self,
       highlight: !message.is_self && mentions(message.text, selfNick),
