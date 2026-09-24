@@ -15,6 +15,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "mock": "node scripts/dev/mock-server.mjs",
+    "mock:flood": "node scripts/dev/mock-server.mjs --flood 200",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
