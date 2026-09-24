@@ -47,6 +47,16 @@ export type ComposerAction =
   | { kind: 'quit'; reason: string | null }
   | { kind: 'set'; key: string; value: string }
   | { kind: 'help'; command: string | null }
+  /** Add or remove a keyword that should be highlighted. */
+  | {
+      kind: 'highlight';
+      pattern: string;
+      on: boolean;
+      caseSensitive: boolean;
+      wholeWord: boolean;
+    }
+  /** Report the current highlight rules. */
+  | { kind: 'highlightList' }
   /** Understood but unusable here, e.g. `/topic` outside a channel. */
   | { kind: 'error'; key: string }
   | { kind: 'unknown'; command: string };
@@ -346,6 +356,43 @@ export const COMMANDS: readonly CommandSpec[] = [
       const payload = rest === '' ? verb.toUpperCase() : `${verb.toUpperCase()} ${rest}`;
 
       return { kind: 'raw', line: `PRIVMSG ${head} :${CTCP_END}${payload}${CTCP_END}` };
+    },
+  },
+  {
+    name: 'highlight',
+    aliases: ['hilight'],
+    usage: '[--case] [--substring] [word]',
+    descriptionKey: 'highlight',
+    parse: (args) => {
+      const parts = tokens(args);
+      // Flags are stripped before joining, so a phrase like `rust release`
+      // stays one pattern.
+      const flags = parts.filter((part) => part.startsWith('--'));
+      const words = parts.filter((part) => !part.startsWith('--'));
+
+      if (words.length === 0) return { kind: 'highlightList' };
+
+      return {
+        kind: 'highlight',
+        pattern: words.join(' '),
+        on: true,
+        caseSensitive: flags.includes('--case'),
+        wholeWord: !flags.includes('--substring'),
+      };
+    },
+  },
+  {
+    name: 'unhighlight',
+    aliases: ['unhilight'],
+    usage: '<word>',
+    descriptionKey: 'unhighlight',
+    parse: (args) => {
+      const pattern = tokens(args)
+        .filter((part) => !part.startsWith('--'))
+        .join(' ');
+
+      if (pattern === '') return null;
+      return { kind: 'highlight', pattern, on: false, caseSensitive: false, wholeWord: true };
     },
   },
   {

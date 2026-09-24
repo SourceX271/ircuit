@@ -36,6 +36,9 @@ export const en: TranslationSchema = {
       closeBuffer: 'Close this buffer',
       clearBuffer: 'Clear this buffer',
       disconnect: 'Disconnect {{network}}',
+      nextHighlight: 'Jump to the next highlighted buffer',
+      nextHighlightCount: '{{count}} in total',
+      clearNotifications: 'Clear all highlight alerts',
     },
   },
 
@@ -47,6 +50,13 @@ export const en: TranslationSchema = {
     previousBuffer: 'Previous buffer',
     jumpToBuffer: 'Jump to buffer 1–9',
     closeBuffer: 'Close this buffer',
+  },
+
+  notifications: {
+    title: 'Highlight alerts',
+    dismiss: 'Dismiss',
+    clear: 'Clear all',
+    moreAndClear: '{{count}} more · clear all',
   },
 
   a11y: {
@@ -150,6 +160,13 @@ export const en: TranslationSchema = {
       removed: 'No longer ignoring {{nick}}',
     },
 
+    highlight: {
+      added: 'Highlighting “{{word}}”',
+      removed: 'No longer highlighting “{{word}}”',
+      none: 'No highlight words yet — add one with /highlight <word>',
+      list: 'Highlight words: {{words}}',
+    },
+
     set: {
       applied: 'Set {{option}}',
       usage: '/set sendOnEnter <on|off>',
@@ -183,6 +200,8 @@ export const en: TranslationSchema = {
       whois: 'Look up a nickname',
       ignore: 'Hide everything someone says',
       unignore: 'Stop hiding someone',
+      highlight: 'Highlight a word (optionally --case / --substring)',
+      unhighlight: 'Stop highlighting a word',
       ctcp: 'Send a CTCP request',
       raw: 'Send a raw protocol line',
       clear: 'Clear this buffer',

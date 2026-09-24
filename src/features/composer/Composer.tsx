@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next';
 
 import { IconButton } from '@/components/ui/icon-button';
+import { createRule } from '@/lib/highlight';
 import {
   disconnectNetwork,
   inviteUser,
@@ -19,6 +20,7 @@ import {
   whois,
 } from '@/lib/ipc';
 import { isIgnored, useSessionStore } from '@/store/session';
+import { useNotificationsStore } from '@/store/notifications';
 import { useUiStore } from '@/store/ui';
 
 import {
@@ -301,6 +303,36 @@ export function Composer() {
       case 'set':
         applyOption(action.key, action.value);
         break;
+
+      case 'highlight': {
+        const rules = useNotificationsStore.getState();
+
+        if (action.on) {
+          rules.addRule(
+            createRule(action.pattern, {
+              caseSensitive: action.caseSensitive,
+              wholeWord: action.wholeWord,
+            }),
+          );
+          setNotice(t('composer.highlight.added', { word: action.pattern }));
+        } else {
+          rules.removeRule(action.pattern);
+          setNotice(t('composer.highlight.removed', { word: action.pattern }));
+        }
+        break;
+      }
+
+      case 'highlightList': {
+        const rules = useNotificationsStore.getState().rules;
+        setNotice(
+          rules.length === 0
+            ? t('composer.highlight.none')
+            : t('composer.highlight.list', {
+                words: rules.map((rule) => rule.pattern).join('  '),
+              }),
+        );
+        break;
+      }
 
       case 'help':
         showHelp(action.command);

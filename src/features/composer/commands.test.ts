@@ -333,6 +333,58 @@ describe('parseComposerInput', () => {
     expect(parseComposerInput('/help', channel)).toEqual({ kind: 'help', command: null });
   });
 
+  it('adds a highlight word with sensible defaults', () => {
+    expect(parseComposerInput('/highlight rust', channel)).toEqual({
+      kind: 'highlight',
+      pattern: 'rust',
+      on: true,
+      caseSensitive: false,
+      wholeWord: true,
+    });
+  });
+
+  it('reads the highlight flags', () => {
+    expect(parseComposerInput('/highlight --case Rust', channel)).toEqual({
+      kind: 'highlight',
+      pattern: 'Rust',
+      on: true,
+      caseSensitive: true,
+      wholeWord: true,
+    });
+    expect(parseComposerInput('/highlight --substring rust', channel)).toEqual({
+      kind: 'highlight',
+      pattern: 'rust',
+      on: true,
+      caseSensitive: false,
+      wholeWord: false,
+    });
+  });
+
+  it('keeps a multi-word highlight phrase together', () => {
+    expect(parseComposerInput('/highlight release day', channel)).toEqual({
+      kind: 'highlight',
+      pattern: 'release day',
+      on: true,
+      caseSensitive: false,
+      wholeWord: true,
+    });
+  });
+
+  it('lists the highlight words when none is given', () => {
+    expect(parseComposerInput('/highlight', channel)).toEqual({ kind: 'highlightList' });
+  });
+
+  it('removes a highlight word', () => {
+    expect(parseComposerInput('/unhighlight rust', channel)).toEqual({
+      kind: 'highlight',
+      pattern: 'rust',
+      on: false,
+      caseSensitive: false,
+      wholeWord: true,
+    });
+    expect(parseComposerInput('/unhighlight', channel)).toBeNull();
+  });
+
   it('is case-insensitive about command names', () => {
     expect(parseComposerInput('/JOIN #rust', channel)).toEqual({
       kind: 'join',

@@ -15,6 +15,7 @@ import { cn } from '@/lib/cn';
 import { disconnectNetwork } from '@/lib/ipc';
 import { THEME_MODES } from '@/lib/theme';
 import { orderedBuffers, useSessionStore } from '@/store/session';
+import { useNotificationsStore } from '@/store/notifications';
 import { useUiStore } from '@/store/ui';
 
 import { filterEntries, stepIndex, type Searchable } from './matching';
@@ -61,6 +62,11 @@ function usePaletteGroups(): Group[] {
   const membersOpen = useUiStore((state) => state.membersOpen);
   const themeMode = useUiStore((state) => state.themeMode);
   const language = useUiStore((state) => state.language);
+
+  // A count rather than the array: the entry list only needs to know whether
+  // there is anything to clear, and subscribing to the array would rebuild
+  // every entry on each incoming notification.
+  const notificationCount = useNotificationsStore((state) => state.notifications.length);
 
   const mac = useMemo(() => isMacLike(currentPlatform()), []);
 
@@ -156,6 +162,30 @@ function usePaletteGroups(): Group[] {
       });
     }
 
+    const highlighted = orderedBuffers(networks, buffers).filter((buffer) => buffer.highlight);
+    if (highlighted.length > 0) {
+      actionEntries.push({
+        id: 'action:next-highlight',
+        label: t('palette.actions.nextHighlight'),
+        detail: t('palette.actions.nextHighlightCount', { count: highlighted.length }),
+        run: () => {
+          // Start after the current buffer, so repeated use walks the list
+          // rather than bouncing between the same two.
+          const index = highlighted.findIndex((buffer) => buffer.id === activeBufferId);
+          const next = highlighted[(index + 1) % highlighted.length]!;
+          useSessionStore.getState().selectBuffer(next.id);
+        },
+      });
+    }
+
+    if (notificationCount > 0) {
+      actionEntries.push({
+        id: 'action:clear-notifications',
+        label: t('palette.actions.clearNotifications'),
+        run: () => useNotificationsStore.getState().clearNotifications(),
+      });
+    }
+
     // Slash commands are inserted rather than run: most of them need arguments,
     // and guessing them would be worse than one keystroke.
     const commandEntries: PaletteEntry[] = COMMANDS.map((spec) => ({
@@ -189,6 +219,7 @@ function usePaletteGroups(): Group[] {
     membersOpen,
     themeMode,
     language,
+    notificationCount,
     toggleSidebar,
     toggleMembers,
     mac,

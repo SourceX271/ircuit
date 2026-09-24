@@ -5,13 +5,14 @@ import {
   isChannelName,
   MAX_LINES_PER_BUFFER,
   MAX_TRAFFIC_LINES,
-  mentions,
   parseBufferId,
   resetLineSequence,
   resolveBufferTarget,
   useSessionStore,
 } from './session';
 import type { IncomingMessage, NetworkStatus } from '@/lib/ipc';
+import { createRule } from '@/lib/highlight';
+import { useNotificationsStore } from './notifications';
 
 const NETWORK = 'irc.libera.chat:6697';
 
@@ -72,7 +73,12 @@ beforeEach(() => {
     traffic: {},
     activeBufferId: null,
     lastSeq: {},
+    channels: {},
+    ignored: {},
   });
+  // The session store writes into the notification stack, so it has to start
+  // every test empty or the counts leak between cases.
+  useNotificationsStore.setState({ rules: [], notifications: [] });
   resetLineSequence();
   nextSeq = 1;
 });
@@ -141,30 +147,6 @@ describe('resolveBufferTarget', () => {
 
   it('falls back to the target when we do not know our nickname', () => {
     expect(resolveBufferTarget({ target: 'me', nick: 'alice', is_self: false }, null)).toBe('me');
-  });
-});
-
-describe('mentions', () => {
-  it('matches a whole nickname token', () => {
-    expect(mentions('hello me how are you', 'me')).toBe(true);
-    expect(mentions('me: ping', 'me')).toBe(true);
-    expect(mentions('ping (me)', 'me')).toBe(true);
-    expect(mentions('well, me too', 'me')).toBe(true);
-  });
-
-  it('does not match a nickname inside a longer word', () => {
-    expect(mentions('bobcat', 'bob')).toBe(false);
-    expect(mentions('something', 'me')).toBe(false);
-  });
-
-  it('treats bracket characters as part of a nickname', () => {
-    // `[`, `]`, `\`, `^`, `{`, `}`, `|` and backtick are all legal IRC nickname
-    // characters, so `[me]` reads as one token rather than a mention of `me`.
-    expect(mentions('[me] ping', 'me')).toBe(false);
-  });
-
-  it('is false without a nickname', () => {
-    expect(mentions('anything', null)).toBe(false);
   });
 });
 
@@ -239,6 +221,17 @@ describe('session store', () => {
     const buffer = useSessionStore.getState().buffers.find((candidate) => candidate.id === id);
     expect(buffer?.highlight).toBe(true);
     expect(useSessionStore.getState().lines[id]?.[0]?.highlight).toBe(true);
+  });
+
+  it('highlights a line that matches a keyword rule', () => {
+    useNotificationsStore.setState({ rules: [createRule('rust')], notifications: [] });
+    useSessionStore.getState().applyNetworkStatus(status());
+    useSessionStore.getState().applyMessage(message({ target: '#rust', text: 'a rust question' }));
+
+    const id = bufferId(NETWORK, '#rust');
+    expect(useSessionStore.getState().lines[id]?.[0]?.highlight).toBe(true);
+
+    useNotificationsStore.setState({ rules: [] });
   });
 
   it('clears unread when the buffer is opened', () => {
@@ -407,5 +400,53 @@ describe('session store', () => {
 
     expect(useSessionStore.getState().lines[id]).toEqual([]);
     expect(useSessionStore.getState().buffers.some((buffer) => buffer.id === id)).toBe(true);
+  });
+
+  it('raises a banner for a highlight in a buffer that is not on screen', () => {
+    useNotificationsStore.setState({ rules: [], notifications: [] });
+    useSessionStore.getState().applyNetworkStatus(status());
+
+    // The server buffer is active, so the channel is off screen.
+    useSessionStore.getState().applyMessage(message({ target: '#rust', text: 'me: ping' }));
+
+    const notifications = useNotificationsStore.getState().notifications;
+    expect(notifications).toHaveLength(1);
+    expect(notifications[0]?.bufferId).toBe(bufferId(NETWORK, '#rust'));
+    expect(notifications[0]?.bufferLabel).toBe('#rust');
+    expect(notifications[0]?.nick).toBe('alice');
+  });
+
+  it('raises no banner for the buffer being read', () => {
+    useNotificationsStore.setState({ rules: [], notifications: [] });
+    useSessionStore.getState().applyNetworkStatus(status());
+
+    const id = bufferId(NETWORK, '#rust');
+    useSessionStore.getState().applyMessage(message({ target: '#rust' }));
+    useSessionStore.getState().selectBuffer(id);
+
+    useSessionStore.getState().applyMessage(message({ target: '#rust', text: 'me: ping', seq: 2 }));
+    expect(useNotificationsStore.getState().notifications).toHaveLength(0);
+  });
+
+  it('raises no banner for a replayed backlog line', () => {
+    useNotificationsStore.setState({ rules: [], notifications: [] });
+    useSessionStore.getState().applyNetworkStatus(status());
+
+    const live = message({ target: '#rust', text: 'me: ping', seq: 5 });
+    useSessionStore.getState().applyMessage(live);
+    expect(useNotificationsStore.getState().notifications).toHaveLength(1);
+
+    // The same line arriving again from the backlog is not a new event.
+    useSessionStore.getState().applyMessage(live);
+    expect(useNotificationsStore.getState().notifications).toHaveLength(1);
+  });
+
+  it('raises no banner for an ignored user', () => {
+    useNotificationsStore.setState({ rules: [], notifications: [] });
+    useSessionStore.getState().applyNetworkStatus(status());
+    useSessionStore.getState().toggleIgnored(NETWORK, 'alice');
+
+    useSessionStore.getState().applyMessage(message({ target: '#rust', text: 'me: ping' }));
+    expect(useNotificationsStore.getState().notifications).toHaveLength(0);
   });
 });

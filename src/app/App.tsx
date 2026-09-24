@@ -1,4 +1,5 @@
 import { PanelLeft, PanelRight } from 'lucide-react';
+import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { IconButton } from '@/components/ui/icon-button';
@@ -8,6 +9,7 @@ import { MemberList } from '@/features/members/MemberList';
 import { MessageList } from '@/features/messages/MessageList';
 import { TopicBar } from '@/features/messages/TopicBar';
 import { NetworkDialog } from '@/features/networks/NetworkDialog';
+import { NotificationStack } from '@/features/notifications/NotificationStack';
 import { CommandPalette } from '@/features/palette/CommandPalette';
 import { CoreModulesCard } from '@/features/selfcheck/CoreModulesCard';
 import { useCoreBridge } from '@/features/selfcheck/useCoreBridge';
@@ -15,6 +17,7 @@ import { StatusBar } from '@/features/shell/StatusBar';
 import { TopBar } from '@/features/shell/TopBar';
 import { useShortcuts } from '@/features/shortcuts/useShortcuts';
 import { cn } from '@/lib/cn';
+import { composeTitle, setWindowTitle } from '@/lib/windowTitle';
 import { useSessionStore } from '@/store/session';
 import { useUiStore } from '@/store/ui';
 
@@ -46,6 +49,21 @@ export function App() {
   const activeBufferId = useSessionStore((state) => state.activeBufferId);
   const buffers = useSessionStore((state) => state.buffers);
   const networks = useSessionStore((state) => state.networks);
+
+  // Counts of buffers, not of messages: the title is a "something needs you"
+  // signal, and a number that grows with every line stops being one. Selecting
+  // the count rather than the filtered array also keeps this from re-rendering
+  // the whole window on every message.
+  const unreadBuffers = useSessionStore((state) =>
+    state.buffers.reduce((total, buffer) => total + (buffer.unread > 0 ? 1 : 0), 0),
+  );
+  const highlightBuffers = useSessionStore((state) =>
+    state.buffers.reduce((total, buffer) => total + (buffer.highlight ? 1 : 0), 0),
+  );
+
+  useEffect(() => {
+    void setWindowTitle(composeTitle(t('app.name'), highlightBuffers, unreadBuffers));
+  }, [highlightBuffers, unreadBuffers, t]);
 
   const buffer = buffers.find((candidate) => candidate.id === activeBufferId) ?? null;
   const network = networks.find((candidate) => candidate.id === buffer?.networkId) ?? null;
@@ -95,6 +113,8 @@ export function App() {
       </div>
 
       <StatusBar bridge={bridge} />
+
+      <NotificationStack />
 
       <NetworkDialog open={connectionDialogOpen} onClose={() => setConnectionDialogOpen(false)} />
 

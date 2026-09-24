@@ -13,6 +13,7 @@
 
 import { create } from 'zustand';
 
+import { isHighlight } from '@/lib/highlight';
 import type {
   ChannelClosed,
   ChannelSnapshot,
@@ -24,6 +25,8 @@ import type {
   RawTraffic,
   TrafficDirection,
 } from '@/lib/ipc';
+
+import { nextNotificationId, shouldNotify, useNotificationsStore } from './notifications';
 
 export type BufferKind = 'server' | 'channel' | 'query';
 
@@ -159,31 +162,6 @@ export function orderedBuffers(
   return result;
 }
 
-/** Whether the text mentions `nick` as a word-ish token. */ export function mentions(
-  text: string,
-  nick: string | null,
-): boolean {
-  if (!nick) return false;
-
-  const haystack = text.toLowerCase();
-  const needle = nick.toLowerCase();
-  if (!haystack.includes(needle)) return false;
-
-  // A crude boundary check: the characters around the match must not be
-  // nickname characters. This keeps "bob" from matching "bobcat".
-  let index = haystack.indexOf(needle);
-  while (index >= 0) {
-    const before = index === 0 ? '' : haystack[index - 1]!;
-    const after = haystack[index + needle.length] ?? '';
-    const isNickChar = (ch: string) => /[a-z0-9_\-[\]\\^{}|`]/.test(ch);
-
-    if (!isNickChar(before) && !isNickChar(after)) return true;
-    index = haystack.indexOf(needle, index + 1);
-  }
-
-  return false;
-}
-
 let sequence = 0;
 function nextId(prefix: string): string {
   sequence += 1;
@@ -315,6 +293,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     const id = bufferId(message.network_id, target);
     const active = state.activeBufferId === id;
 
+    const rules = useNotificationsStore.getState().rules;
+    const highlight = !message.is_self && isHighlight(message.text, selfNick, rules);
+
     const line: SessionLine = {
       id: nextId('line'),
       nick: message.nick,
@@ -323,7 +304,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       segments: message.segments,
       timestamp: message.timestamp,
       isSelf: message.is_self,
-      highlight: !message.is_self && mentions(message.text, selfNick),
+      highlight,
     };
 
     set((current) => {
@@ -353,6 +334,32 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       if (active) buffer.seen = true;
 
       buffers[index] = buffer;
+
+      // Raised here rather than in the bridge because everything that decides
+      // eligibility is already in this function: the ignore filter above, the
+      // replay dedup just now, and whether the buffer is on screen. A second
+      // copy of those rules elsewhere is a second copy to get wrong.
+      if (
+        shouldNotify({
+          text: line.text,
+          selfNick,
+          rules,
+          isSelf: line.isSelf,
+          isActivity,
+          isActiveBuffer: active,
+        })
+      ) {
+        useNotificationsStore.getState().notify({
+          id: nextNotificationId(),
+          bufferId: id,
+          bufferLabel: target === '' ? '' : target,
+          networkId: message.network_id,
+          networkName: network?.name ?? message.network_id,
+          nick: line.nick,
+          text: line.text,
+          timestamp: line.timestamp,
+        });
+      }
 
       return {
         buffers,

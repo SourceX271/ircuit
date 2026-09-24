@@ -3,5 +3,8 @@
   "identifier": "default",
   "description": "Ircuit 主窗口的默认权限集",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-title"
+  ]
 }

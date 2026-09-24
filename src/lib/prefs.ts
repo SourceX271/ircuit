@@ -63,3 +63,37 @@ export function readStoredMembersOpen(storage: Pick<Storage, 'getItem'>): boolea
 export function persistMembersOpen(storage: Pick<Storage, 'setItem'>, value: boolean): void {
   persistFlag(storage, MEMBERS_OPEN_KEY, value);
 }
+
+/** 关键词高亮规则。 */
+export const HIGHLIGHT_RULES_KEY = 'ircuit.highlightRules';
+
+/**
+ * 读取一段 JSON 偏好。
+ *
+ * 传入的 `parse` 负责校验：localStorage 里的内容可能是旧版本写的、手改的，
+ * 或者干脆是别的程序留下的。无法解析或校验不通过时一律回退到默认值——
+ * 因为一条坏记录而让整个界面起不来，是最不划算的失败方式。
+ */
+export function readStoredJson<T>(
+  storage: Pick<Storage, 'getItem'>,
+  key: string,
+  parse: (value: unknown) => T | null,
+  fallback: T,
+): T {
+  const raw = storage.getItem(key);
+  if (raw === null) return fallback;
+
+  try {
+    return parse(JSON.parse(raw)) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export function persistJson(storage: Pick<Storage, 'setItem'>, key: string, value: unknown): void {
+  try {
+    storage.setItem(key, JSON.stringify(value));
+  } catch {
+    // 存储被禁用或写满时静默放弃：偏好没记住不是值得打断用户的问题。
+  }
+}

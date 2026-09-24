@@ -4,6 +4,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import i18n from '@/i18n';
 import type { ChannelSnapshot } from '@/lib/ipc';
 import { bufferId, useSessionStore } from '@/store/session';
+import { useNotificationsStore } from '@/store/notifications';
 import { useUiStore } from '@/store/ui';
 
 import { Composer } from './Composer';
@@ -130,6 +131,7 @@ async function switchTo(id: string) {
 beforeEach(() => {
   vi.clearAllMocks();
   useComposerStore.setState({ drafts: {}, history: {} });
+  useNotificationsStore.setState({ rules: [], notifications: [] });
   useUiStore.setState({ sendOnEnter: true });
 });
 
@@ -351,6 +353,30 @@ describe('Composer', () => {
     fireEvent.keyDown(box, { key: 'Enter' });
 
     await waitFor(() => expect(useUiStore.getState().sendOnEnter).toBe(false));
+  });
+
+  it('adds and removes a highlight word', async () => {
+    const box = seed();
+
+    type(box, '/highlight rust');
+    fireEvent.keyDown(box, { key: 'Enter' });
+    await waitFor(() => {
+      expect(useNotificationsStore.getState().rules.map((rule) => rule.pattern)).toEqual(['rust']);
+    });
+
+    type(box, '/unhighlight rust');
+    fireEvent.keyDown(box, { key: 'Enter' });
+    await waitFor(() => expect(useNotificationsStore.getState().rules).toHaveLength(0));
+  });
+
+  it('says so when there are no highlight words yet', async () => {
+    const box = seed();
+    type(box, '/highlight');
+    fireEvent.keyDown(box, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(screen.getByText(/还没有高亮词/)).toBeInTheDocument();
+    });
   });
 
   it('closes a query buffer but only parts a channel', async () => {

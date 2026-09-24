@@ -37,6 +37,9 @@ export const zhCN = {
       closeBuffer: '关闭当前会话',
       clearBuffer: '清空当前会话记录',
       disconnect: '断开 {{network}}',
+      nextHighlight: '跳到下一个高亮会话',
+      nextHighlightCount: '共 {{count}} 个',
+      clearNotifications: '清除全部高亮提醒',
     },
   },
 
@@ -48,6 +51,13 @@ export const zhCN = {
     previousBuffer: '上一个会话',
     jumpToBuffer: '跳到第 1–9 个会话',
     closeBuffer: '关闭当前会话',
+  },
+
+  notifications: {
+    title: '高亮提醒',
+    dismiss: '关闭提醒',
+    clear: '全部清除',
+    moreAndClear: '还有 {{count}} 条 · 全部清除',
   },
 
   a11y: {
@@ -151,6 +161,13 @@ export const zhCN = {
       removed: '已取消忽略 {{nick}}',
     },
 
+    highlight: {
+      added: '已高亮「{{word}}」',
+      removed: '已取消高亮「{{word}}」',
+      none: '还没有高亮词，用 /highlight <词> 添加',
+      list: '高亮词：{{words}}',
+    },
+
     set: {
       applied: '已设置 {{option}}',
       usage: '/set sendOnEnter <on|off>',
@@ -184,6 +201,8 @@ export const zhCN = {
       whois: '查询某个昵称',
       ignore: '不再显示某人的发言',
       unignore: '恢复显示某人的发言',
+      highlight: '添加一个高亮词（可选 --case / --substring）',
+      unhighlight: '移除一个高亮词',
       ctcp: '发送 CTCP 请求',
       raw: '发送一条原始协议行',
       clear: '清空当前缓冲区',
