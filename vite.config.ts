@@ -25,7 +25,17 @@ export default defineConfig({
     hmr: devHost ? { protocol: 'ws', host: devHost, port: 1421 } : undefined,
     watch: {
       // Rust 侧由 cargo 负责重建，Vite 不必跟着刷新。
-      ignored: ['**/src-tauri/**', '**/crates/**', '**/.cache/**', '**/target/**'],
+      //
+      // 最后一条是给「就地写文件」的编辑器/工具留的：某些写法会先在目标旁边建一个
+      // `<名字>.<pid>.<uuid>.tmpdir/` 再原子替换，watcher 去 watch 那个临时文件时
+      // 会撞上 EBUSY 并**直接让 dev server 崩掉**（不是警告，是进程退出）。
+      ignored: [
+        '**/src-tauri/**',
+        '**/crates/**',
+        '**/.cache/**',
+        '**/target/**',
+        '**/.*.tmpdir/**',
+      ],
     },
   },
 

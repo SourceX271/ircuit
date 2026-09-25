@@ -36,7 +36,9 @@ export function NotificationStack() {
       // `polite` rather than `assertive`: a highlight is worth a glance, not an
       // interruption of whatever the screen reader is already saying.
       aria-live="polite"
-      className="pointer-events-none fixed bottom-12 right-3 z-40 flex w-72 flex-col gap-1.5"
+      // Absolute inside the message pane rather than fixed to the window, so a
+      // banner never lands on the buffer tree or the member list.
+      className="pointer-events-none absolute bottom-2 right-3 z-30 flex w-72 flex-col gap-1.5"
     >
       {visible.map((notification) => (
         <div

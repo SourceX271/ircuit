@@ -190,6 +190,18 @@ export type IncomingMessage = {
 	/**  Whether we sent it. */
 	is_self: boolean,
 	/**
+	 *  Our nickname on this network as it was when the line was classified.
+	 * 
+	 *  Sent so the UI never has to *infer* it. The store used to look the nick up
+	 *  in its network list, which is empty for the first few milliseconds after
+	 *  startup — exactly when an auto-connected session's first lines arrive. Any
+	 *  line that landed in that window was classified with no nickname known, so
+	 *  a mention of the user was silently not a highlight, and the sequence
+	 *  dedup meant it was never re-examined. The backend already knows the nick:
+	 *  it is what `is_self` was computed from.
+	 */
+	self_nick: string | null,
+	/**
 	 *  Monotonic per-network sequence.
 	 * 
 	 *  Exists so the UI can subscribe *and* replay the backlog without

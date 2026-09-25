@@ -280,7 +280,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   applyMessage: (message) => {
     const state = get();
     const network = state.networks.find((candidate) => candidate.id === message.network_id);
-    const selfNick = network?.nick ?? null;
+
+    // The backend's own nickname wins over the one in our network list. That list
+    // is empty for the first few milliseconds after startup, and an
+    // auto-connected session's opening lines arrive exactly then — classifying
+    // them with "no nickname known" silently un-highlights every mention of the
+    // user, and the sequence dedup means they are never looked at again.
+    const selfNick = message.self_nick ?? network?.nick ?? null;
 
     // An ignored user's lines never enter the store at all: filtering them in
     // the renderer would still let them bump unread counts and, later,

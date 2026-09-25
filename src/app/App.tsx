@@ -90,7 +90,7 @@ export function App() {
           <CollapsedRail side="left" onExpand={toggleSidebar} label={t('shell.showSidebar')} />
         )}
 
-        <main id="main" className="flex min-w-0 flex-1 flex-col">
+        <main id="main" className="relative flex min-w-0 flex-1 flex-col">
           <BufferTabs />
           <TopicBar
             buffer={buffer}
@@ -99,6 +99,10 @@ export function App() {
           />
           <MessageList />
           <Composer />
+          {/* Anchored to the message pane rather than the window: a banner over
+              the member list or the buffer tree hides exactly the thing someone
+              is reaching for while a highlight demands their attention. */}
+          <NotificationStack />
         </main>
 
         {membersOpen ? (
@@ -115,8 +119,6 @@ export function App() {
       </div>
 
       <StatusBar bridge={bridge} />
-
-      <NotificationStack />
 
       <NetworkDialog open={connectionDialogOpen} onClose={() => setConnectionDialogOpen(false)} />
 

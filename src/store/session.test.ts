@@ -44,6 +44,7 @@ function message(overrides: Partial<IncomingMessage> = {}): IncomingMessage {
     ],
     timestamp: 1_700_000_000,
     is_self: false,
+    self_nick: null,
     seq: nextSeq++,
     ...overrides,
   };
@@ -221,6 +222,39 @@ describe('session store', () => {
     const buffer = useSessionStore.getState().buffers.find((candidate) => candidate.id === id);
     expect(buffer?.highlight).toBe(true);
     expect(useSessionStore.getState().lines[id]?.[0]?.highlight).toBe(true);
+  });
+
+  it('flags a highlight from the nick the backend sent, with no network list yet', () => {
+    // The shape of a startup race: an auto-connected session's first lines
+    // arrive over the event stream before `listNetworks()` has answered, so the
+    // store has no network entry to look a nickname up in. The backend already
+    // knows the nick — it is what `is_self` was derived from — so it sends it,
+    // and the mention must still be highlighted. Getting this wrong is silent:
+    // the sequence dedup means those lines are never classified again.
+    useNotificationsStore.setState({ rules: [], notifications: [] });
+
+    useSessionStore
+      .getState()
+      .applyMessage(message({ target: '#rust', text: 'me: ping', self_nick: 'me' }));
+
+    const id = bufferId(NETWORK, '#rust');
+    expect(useSessionStore.getState().networks).toHaveLength(0);
+    expect(useSessionStore.getState().lines[id]?.[0]?.highlight).toBe(true);
+
+    const buffer = useSessionStore.getState().buffers.find((candidate) => candidate.id === id);
+    expect(buffer?.highlight).toBe(true);
+  });
+
+  it('raises a banner for that line too', () => {
+    useNotificationsStore.setState({ rules: [], notifications: [] });
+
+    useSessionStore
+      .getState()
+      .applyMessage(message({ target: '#rust', text: 'me: ping', self_nick: 'me' }));
+
+    const notifications = useNotificationsStore.getState().notifications;
+    expect(notifications).toHaveLength(1);
+    expect(notifications[0]?.bufferLabel).toBe('#rust');
   });
 
   it('highlights a line that matches a keyword rule', () => {

@@ -503,6 +503,7 @@ async fn pump(
                         segments: convert_segments(&normalized.segments),
                         timestamp: normalized.timestamp,
                         is_self: normalized.is_self,
+                        self_nick: Some(self_nick.clone()),
                         seq: manager.next_seq(&network_id).await,
                     };
                     let _ = incoming.clone().emit(&app);
@@ -533,6 +534,7 @@ async fn pump(
                         segments: convert_segments(&normalized.segments),
                         timestamp: normalized.timestamp,
                         is_self: normalized.is_self,
+                        self_nick: Some(self_nick.clone()),
                         seq: manager.next_seq(&network_id).await,
                     };
                     let _ = incoming.clone().emit(&app);
@@ -677,7 +679,7 @@ fn now_seconds() -> u32 {
 ///
 /// ```text
 /// IRCUIT_AUTOCONNECT = <host>:<port>:<nick>[:plain]
-/// IRCUIT_AUTOJOIN    = #channel
+/// IRCUIT_AUTOJOIN    = #channel[,#channel...]
 /// ```
 ///
 /// Debug builds only, and deliberately so: it exists so a developer — or an
@@ -720,9 +722,20 @@ pub fn maybe_autoconnect(app: AppHandle, manager: Arc<NetworkManager>) {
         sasl_password: None,
     };
 
-    let channel = std::env::var("IRCUIT_AUTOJOIN")
+    // A comma- or space-separated list, so a visual check can produce more than
+    // one buffer — which is what it takes to see unread badges, tabs filling up,
+    // and a notification landing in a buffer that is not on screen.
+    let channels: Vec<String> = std::env::var("IRCUIT_AUTOJOIN")
         .ok()
-        .filter(|value| !value.is_empty());
+        .map(|value| {
+            value
+                .split([',', ' '])
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default();
 
     info!(%spec, "autoconnecting from IRCUIT_AUTOCONNECT");
 
@@ -735,9 +748,9 @@ pub fn maybe_autoconnect(app: AppHandle, manager: Arc<NetworkManager>) {
             }
         };
 
-        let Some(channel) = channel else {
+        if channels.is_empty() {
             return;
-        };
+        }
 
         // A JOIN sent before registration completes is dropped by the server, so
         // wait for the state rather than guessing a delay.
@@ -749,11 +762,13 @@ pub fn maybe_autoconnect(app: AppHandle, manager: Arc<NetworkManager>) {
             });
 
             if registered {
-                if let Err(error) = manager
-                    .send(&app, &network.id, ClientCommand::Join(channel))
-                    .await
-                {
-                    warn!(%error, "autoconnect could not join");
+                for channel in &channels {
+                    if let Err(error) = manager
+                        .send(&app, &network.id, ClientCommand::Join(channel.clone()))
+                        .await
+                    {
+                        warn!(%error, %channel, "autoconnect could not join");
+                    }
                 }
                 return;
             }
