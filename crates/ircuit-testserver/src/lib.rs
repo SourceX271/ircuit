@@ -272,12 +272,6 @@ async fn serve(stream: TcpStream, config: ServerConfig, inner: Arc<Inner>) -> st
                 let Some(line) = line? else { return Ok(()) };
                 let line = line.trim_end_matches(['\r', '\n']).to_owned();
 
-                {
-                    let mut shared = inner.shared.lock().await;
-                    shared.received.push(line.clone());
-                }
-                inner.notify.notify_waiters();
-
                 let replies = session.handle(&line);
 
                 for reply in replies {
@@ -303,6 +297,18 @@ async fn serve(stream: TcpStream, config: ServerConfig, inner: Arc<Inner>) -> st
                     shared.topics = session.topics.clone();
                     shared.away = session.away.clone();
                 }
+
+                // Recorded *after* the line has been handled and the observable
+                // state updated. A test that waits for a line and then inspects
+                // the state must not be able to see a half-applied one — the
+                // earlier ordering let it observe `JOIN`, read the channel list
+                // before the join was applied, and fail on a longer reply burst
+                // even though nothing was wrong.
+                {
+                    let mut shared = inner.shared.lock().await;
+                    shared.received.push(line);
+                }
+                inner.notify.notify_waiters();
 
                 if session.should_close {
                     return Ok(());
@@ -526,6 +532,47 @@ impl ServerSession {
                 ":alice!alice@host PRIVMSG {channel} :history: \
                  https://en.wikipedia.org/wiki/IRC_(Internet_Relay_Chat), and www.irc.org"
             ),
+            // Non-ASCII coverage. Every other line here is ASCII, so a bug in
+            // how multi-byte text is split into styled runs, wrapped, or measured
+            // had nowhere to show up during a visual check — and Chinese is the
+            // main use of this client. Each line below targets a different way
+            // that can go wrong.
+            format!(
+                ":carol!carol@host PRIVMSG {channel} :\
+                 中文测试：今天发布了新版本，随便说点什么。"
+            ),
+            format!(
+                ":carol!carol@host PRIVMSG {channel} :\
+                 \u{0002}粗体中文\u{0002}、\u{001D}斜体中文\u{001D}、\
+                 \u{001F}下划线中文\u{001F}、\u{0003}04红色中文\u{0003} 与 \
+                 \u{0003}09绿色中文\u{0003}"
+            ),
+            // A colour code immediately followed by more text is the classic
+            // place for a parser to swallow a character as a colour digit.
+            format!(
+                ":carol!carol@host PRIVMSG {channel} :\
+                 价格 \u{0003}04123\u{0003} 元，编号 \u{0003}09abc\u{0003}，完毕"
+            ),
+            // Astral-plane characters are one character but two UTF-16 code
+            // units, so anything that slices by index rather than by code point
+            // splits them into two broken halves — exactly "one or two garbled
+            // characters in the middle".
+            format!(":dave!dave@host PRIVMSG {channel} :emoji 中间 🚀🌟🎉 夹在文字里"),
+            // Long unbroken Chinese, to exercise wrapping and the outgoing
+            // splitter: three bytes per character, so the line budget is reached
+            // far sooner than in English.
+            format!(
+                ":dave!dave@host PRIVMSG {channel} :长文本 {}",
+                "中文段落没有空格所以只能按字符边界换行".repeat(3)
+            ),
+            // A CTCP request. Somebody else's client asking for our version is
+            // routine on a real network, and its two frame bytes used to render
+            // as tofu boxes around the word.
+            format!(":erin!erin@host PRIVMSG {nick} :\u{0001}VERSION\u{0001}"),
+            format!(":erin!erin@host PRIVMSG {nick} :\u{0001}TIME\u{0001}"),
+            // A stray C0 control from a misbehaving client, plus one inside
+            // otherwise ordinary text.
+            format!(":erin!erin@host PRIVMSG {channel} :stray\u{0005}control byte"),
         ];
 
         // Optional filler, so scroll behaviour can be exercised at volume.

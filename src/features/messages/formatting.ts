@@ -49,6 +49,32 @@ export function paletteVariable(index: number): string {
 }
 
 /**
+ * Make a raw protocol line readable as text.
+ *
+ * The traffic view deliberately shows what actually went on the wire, which
+ * includes mIRC formatting codes and CTCP framing. Those bytes have no glyph, so
+ * a browser draws them as tofu boxes — and a box tells the reader nothing: it
+ * could be any unrenderable character. Writing them as `\x02` keeps the line
+ * faithful *and* legible, which is the whole point of a diagnostics view.
+ *
+ * Only C0 controls and DEL are escaped. Format characters such as the zero-width
+ * joiner are real text and stay as they are.
+ */
+export function escapeControlCharacters(line: string): string {
+  let out = '';
+  for (const ch of line) {
+    const code = ch.codePointAt(0) ?? 0;
+    if (code < 0x20 || code === 0x7f) {
+      out += `\\x${code.toString(16).padStart(2, '0')}`;
+    } else {
+      out += ch;
+    }
+  }
+
+  return out;
+}
+
+/**
  * Whether a colour is dark enough that text on top of it should be light.
  *
  * Used for background colours, where the sender's choice would otherwise make

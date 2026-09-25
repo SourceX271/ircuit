@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   contrastText,
+  escapeControlCharacters,
   isPlainMessage,
   PALETTE_BUCKETS,
   PALETTE_BUCKET_COUNT,
@@ -139,5 +140,35 @@ describe('isPlainMessage', () => {
   it('is false as soon as anything is styled', () => {
     expect(isPlainMessage([segment('a'), segment('b', { bold: true })])).toBe(false);
     expect(isPlainMessage([segment('a', { fg_index: 4 })])).toBe(false);
+  });
+});
+
+describe('escapeControlCharacters', () => {
+  it('leaves ordinary text alone', () => {
+    expect(escapeControlCharacters('PRIVMSG #rust :hello')).toBe('PRIVMSG #rust :hello');
+    expect(escapeControlCharacters('中文消息')).toBe('中文消息');
+  });
+
+  it('writes mIRC codes as readable escapes instead of tofu boxes', () => {
+    // The traffic view is where these bytes are visible at all, and a box tells
+    // the reader nothing about which code it was.
+    expect(escapeControlCharacters('\u{0002}bold\u{0002}')).toBe('\\x02bold\\x02');
+    expect(escapeControlCharacters('\u{0003}04red\u{0003}')).toBe('\\x0304red\\x03');
+  });
+
+  it('shows CTCP framing', () => {
+    expect(escapeControlCharacters('\u{0001}VERSION\u{0001}')).toBe('\\x01VERSION\\x01');
+  });
+
+  it('covers DEL and the other C0 codes', () => {
+    expect(escapeControlCharacters('\u{0000}')).toBe('\\x00');
+    expect(escapeControlCharacters('\u{0007}')).toBe('\\x07');
+    expect(escapeControlCharacters('\u{007f}')).toBe('\\x7f');
+  });
+
+  it('keeps characters that are real text', () => {
+    // A zero-width joiner is part of emoji sequences; escaping it would be wrong.
+    const family = '\u{1F468}\u{200D}\u{1F469}';
+    expect(escapeControlCharacters(family)).toBe(family);
   });
 });

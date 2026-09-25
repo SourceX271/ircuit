@@ -6,7 +6,7 @@ import { cn } from '@/lib/cn';
 import { openExternal, type MessageKind, type MessageSegment } from '@/lib/ipc';
 import { parseBufferId, useSessionStore, type TrafficLine } from '@/store/session';
 
-import { isPlainStyle, segmentStyle } from './formatting';
+import { escapeControlCharacters, isPlainStyle, segmentStyle } from './formatting';
 import { buildBlocks, flattenBlocks, type DisplayRow } from './grouping';
 import { hrefFor, tokenizeLinks, type TextToken } from './links';
 
@@ -219,7 +219,9 @@ function TrafficRow({ line }: { line: TrafficLine }) {
       >
         {inbound ? '←' : '→'}
       </span>
-      <span className="min-w-0 flex-1 whitespace-pre-wrap break-all text-muted">{line.line}</span>
+      <span className="min-w-0 flex-1 whitespace-pre-wrap break-all text-muted">
+        {escapeControlCharacters(line.line)}
+      </span>
     </div>
   );
 }

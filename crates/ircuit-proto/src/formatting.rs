@@ -163,6 +163,17 @@ pub fn parse(input: &str) -> Vec<Segment> {
                 style.bg = read_optional_color(&mut chars, |chars| read_hex(chars).map(Color::Hex));
             }
             BELL => {}
+            // Anything that is not a formatting code must not reach the renderer
+            // as text. A control character has no glyph, so it shows up as a
+            // tofu box in the middle of the line — and the commonest one by far
+            // is the CTCP frame `\u{0001}`, which turns `\u{0001}VERSION\u{0001}`
+            // into two boxes around a word. Dropping the framing keeps the
+            // payload readable, which is what someone looking at the line wants.
+            //
+            // Deliberately narrow: only control characters are removed. Zero-width
+            // joiners, variation selectors and other format characters are
+            // legitimate inside emoji sequences and must survive.
+            ch if ch.is_control() => {}
             _ => buffer.push(ch),
         }
     }
@@ -410,6 +421,43 @@ mod tests {
     #[test]
     fn bell_is_dropped() {
         assert_eq!(strip("ding\u{0007}!"), "ding!");
+    }
+
+    #[test]
+    fn a_ctcp_frame_does_not_become_visible_boxes() {
+        // A CTCP request arrives as a plain PRIVMSG whose payload is wrapped in
+        // `\u{0001}`. Those two bytes used to fall through to the catch-all and
+        // render as two tofu boxes around the word — the "one or two garbled
+        // characters in the middle" a reader sees when another client asks for
+        // our version.
+        let segments = parse("\u{0001}VERSION\u{0001}");
+
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].text, "VERSION");
+    }
+
+    #[test]
+    fn unknown_control_characters_never_reach_the_text() {
+        // Every C0 control that is not a formatting code, plus DEL and a C1
+        // control (which a mis-decoded byte can produce).
+        for code in [
+            '\u{0000}', '\u{0005}', '\u{0006}', '\u{000B}', '\u{000E}', '\u{007F}', '\u{0085}',
+        ] {
+            let input = format!("be{code}fore");
+            assert_eq!(strip(&input), "before", "code U+{:04X} leaked", code as u32);
+        }
+    }
+
+    #[test]
+    fn format_characters_inside_emoji_sequences_survive() {
+        // Zero-width joiners and variation selectors are not control characters
+        // and are part of legitimate text; stripping them would break emoji.
+        let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}";
+        assert_eq!(strip(family), family);
+
+        // A zero-width space is invisible, not garbled; it must not be dropped
+        // silently either, because it is real text content.
+        assert_eq!(strip("a\u{200B}b"), "a\u{200B}b");
     }
 
     #[test]
