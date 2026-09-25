@@ -16,10 +16,12 @@
 //! and grep.
 
 pub mod error;
+pub mod messages;
 pub mod schema;
 pub mod search;
 
 pub use error::{Result, StorageError};
+pub use messages::{Cursor, Inserted, MessageKind, NewMessage, SearchHit, StoredMessage};
 pub use schema::{migrate, open, open_in_memory, schema_version};
 
 /// The schema version this build expects.
