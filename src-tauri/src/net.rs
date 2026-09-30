@@ -21,13 +21,12 @@ use ircuit_client::{
 };
 use ircuit_proto::Message;
 use ircuit_state::channel::{Channel, StateChange};
-use ircuit_state::view::{self, MessageKind as ViewMessageKind};
+use ircuit_state::view;
 use ircuit_state::ChannelState;
 
 use crate::events::{
-    ChannelClosed, ChannelSnapshot, ConnectionState, CoreStatus, IncomingMessage, MemberInfo,
-    MessageKind, MessageSegment, MessageStyle, NetworkBacklog, NetworkStatus, RawTraffic,
-    TrafficDirection,
+    convert_kind, convert_segments, ChannelClosed, ChannelSnapshot, ConnectionState, CoreStatus,
+    IncomingMessage, MemberInfo, NetworkBacklog, NetworkStatus, RawTraffic, TrafficDirection,
 };
 
 /// How often the core status heartbeat fires.
@@ -203,13 +202,13 @@ impl NetworkManager {
         .ok_or_else(|| format!("no such network: {network_id}"))?;
 
         for line in command_to_lines(&command) {
-            let traffic = RawTraffic {
-                network_id: network_id.to_owned(),
-                direction: TrafficDirection::Outbound,
+            let traffic = RawTraffic::new(
+                network_id.to_owned(),
+                TrafficDirection::Outbound,
                 line,
-                timestamp: now_seconds(),
-                seq: self.next_seq(network_id).await,
-            };
+                now_seconds(),
+                self.next_seq(network_id).await,
+            );
             let _ = traffic.clone().emit(app);
             self.record_traffic(network_id, traffic).await;
         }
@@ -483,13 +482,13 @@ async fn pump(
             NetworkEvent::Message(message) => {
                 let timestamp = now_seconds();
 
-                let traffic = RawTraffic {
-                    network_id: network_id.clone(),
-                    direction: TrafficDirection::Inbound,
-                    line: message.to_wire(),
+                let traffic = RawTraffic::new(
+                    network_id.clone(),
+                    TrafficDirection::Inbound,
+                    message.to_wire(),
                     timestamp,
-                    seq: manager.next_seq(&network_id).await,
-                };
+                    manager.next_seq(&network_id).await,
+                );
                 let _ = traffic.clone().emit(&app);
                 manager.record_traffic(&network_id, traffic).await;
 
@@ -552,53 +551,6 @@ async fn pump(
         .await;
 
     warn!(%network_id, "connection driver stopped");
-}
-
-fn convert_kind(kind: ViewMessageKind) -> MessageKind {
-    match kind {
-        ViewMessageKind::Message => MessageKind::Message,
-        ViewMessageKind::Notice => MessageKind::Notice,
-        ViewMessageKind::Action => MessageKind::Action,
-        ViewMessageKind::System => MessageKind::System,
-    }
-}
-
-/// Project protocol formatting onto the flat shape the UI consumes.
-fn convert_segments(segments: &[ircuit_state::MessageSegment]) -> Vec<MessageSegment> {
-    segments
-        .iter()
-        .map(|segment| {
-            let (fg_index, fg_hex) = split_color(segment.style.fg);
-            let (bg_index, bg_hex) = split_color(segment.style.bg);
-
-            MessageSegment {
-                text: segment.text.clone(),
-                style: MessageStyle {
-                    bold: segment.style.bold,
-                    italic: segment.style.italic,
-                    underline: segment.style.underline,
-                    strikethrough: segment.style.strikethrough,
-                    monospace: segment.style.monospace,
-                    reverse: segment.style.reverse,
-                    fg_index,
-                    bg_index,
-                    fg_hex,
-                    bg_hex,
-                },
-            }
-        })
-        .collect()
-}
-
-/// Colours arrive either as a palette index or as a 24-bit value; the renderer
-/// has to tell them apart, so they travel in separate fields rather than as a
-/// union the generated TypeScript would have to narrow.
-fn split_color(color: Option<ircuit_state::MessageColor>) -> (Option<u8>, Option<String>) {
-    match color {
-        Some(ircuit_state::MessageColor::Indexed(index)) => (Some(index), None),
-        Some(ircuit_state::MessageColor::Hex(value)) => (None, Some(format!("{value:06X}"))),
-        None => (None, None),
-    }
 }
 
 /// Turn a UI request into a validated connection configuration.
@@ -916,10 +868,94 @@ mod tests {
 
     #[test]
     fn message_kinds_map_across_the_boundary() {
-        assert_eq!(convert_kind(ViewMessageKind::Message), MessageKind::Message);
-        assert_eq!(convert_kind(ViewMessageKind::Notice), MessageKind::Notice);
-        assert_eq!(convert_kind(ViewMessageKind::Action), MessageKind::Action);
-        assert_eq!(convert_kind(ViewMessageKind::System), MessageKind::System);
+        use crate::events::MessageKind;
+
+        assert_eq!(
+            convert_kind(ircuit_state::MessageKind::Message),
+            MessageKind::Message
+        );
+        assert_eq!(
+            convert_kind(ircuit_state::MessageKind::Notice),
+            MessageKind::Notice
+        );
+        assert_eq!(
+            convert_kind(ircuit_state::MessageKind::Action),
+            MessageKind::Action
+        );
+        assert_eq!(
+            convert_kind(ircuit_state::MessageKind::System),
+            MessageKind::System
+        );
+    }
+
+    #[test]
+    fn a_plain_traffic_line_carries_no_parsed_segments() {
+        // The server buffer holds a thousand lines per network; paying for a
+        // parse that will never be shown would be waste.
+        let traffic = RawTraffic::new(
+            "net".to_owned(),
+            TrafficDirection::Inbound,
+            "PING :abc".to_owned(),
+            0,
+            1,
+        );
+
+        assert!(traffic.segments.is_empty());
+        assert_eq!(traffic.line, "PING :abc");
+    }
+
+    #[test]
+    fn a_formatted_traffic_line_carries_its_parsed_segments() {
+        let traffic = RawTraffic::new(
+            "net".to_owned(),
+            TrafficDirection::Inbound,
+            ":alice!a@h PRIVMSG #rust :\u{0002}bold\u{0002} plain".to_owned(),
+            0,
+            1,
+        );
+
+        // The raw text is kept as well: a rendered line cannot answer "was that
+        // bold, or was it a literal control byte".
+        assert_eq!(
+            traffic.line,
+            ":alice!a@h PRIVMSG #rust :\u{0002}bold\u{0002} plain"
+        );
+        assert!(
+            traffic
+                .segments
+                .iter()
+                .any(|segment| segment.style.bold && segment.text == "bold"),
+            "expected a bold run, got {:?}",
+            traffic.segments
+        );
+
+        // Rendering must not change what the line says.
+        let rendered: String = traffic
+            .segments
+            .iter()
+            .map(|segment| segment.text.as_str())
+            .collect();
+        assert_eq!(rendered, ":alice!a@h PRIVMSG #rust :bold plain");
+    }
+
+    #[test]
+    fn a_colour_only_line_is_also_parsed() {
+        let traffic = RawTraffic::new(
+            "net".to_owned(),
+            TrafficDirection::Inbound,
+            ":alice!a@h PRIVMSG #rust :\u{0003}04red\u{0003}".to_owned(),
+            0,
+            1,
+        );
+
+        assert!(
+            traffic
+                .segments
+                .iter()
+                .any(|segment| segment.style.fg_index == Some(4) && segment.text == "red"),
+            "expected a red run, got {:?}",
+            traffic.segments
+        );
     }
 
     #[tokio::test]

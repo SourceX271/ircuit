@@ -65,7 +65,16 @@ export interface SessionLine {
 export interface TrafficLine {
   id: string;
   direction: TrafficDirection;
+  /** The line as it went on the wire, formatting codes and all. */
   line: string;
+  /**
+   * The same line parsed into styled runs, when it carries formatting.
+   *
+   * Empty for most lines. The server buffer renders these with the same styling
+   * as a message; `line` stays as the literal fallback so a control byte that
+   * has no styling meaning can still be shown for what it is.
+   */
+  segments: MessageSegment[];
   timestamp: number;
 }
 
@@ -385,6 +394,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         id: nextId('traffic'),
         direction: traffic.direction,
         line: traffic.line,
+        // Absent on a line with no formatting; the store normalises it so the
+        // renderer never has to check for both.
+        segments: traffic.segments ?? [],
         timestamp: traffic.timestamp,
       };
 

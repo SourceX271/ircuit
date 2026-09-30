@@ -323,7 +323,20 @@ export type NetworkSummary = {
 export type RawTraffic = {
 	network_id: string,
 	direction: TrafficDirection,
+	/**  The line exactly as it went on the wire, with its formatting codes intact. */
 	line: string,
+	/**
+	 *  The same line parsed into styled runs, when it carries any formatting.
+	 * 
+	 *  Empty for the great majority of lines — `PING`, numerics, plain chatter —
+	 *  so the ring buffer does not pay for a parse it will never show. The
+	 *  frontend falls back to [`Self::line`] whenever this is empty.
+	 * 
+	 *  The raw text is kept alongside rather than replaced: the server buffer is
+	 *  also the place someone looks to find out what actually arrived, and a
+	 *  rendered line cannot answer "was that bold, or was it `\u{0002}`".
+	 */
+	segments?: MessageSegment[],
 	timestamp: number,
 	/**  Monotonic per-network sequence; see [`IncomingMessage::seq`]. */
 	seq: number,

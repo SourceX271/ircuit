@@ -18,6 +18,20 @@ const NETWORK = 'irc.libera.chat:6697';
 
 let nextSeq = 1;
 
+/** An unstyled run, the baseline every style is described against. */
+const PLAIN_STYLE = {
+  bold: false,
+  italic: false,
+  underline: false,
+  strikethrough: false,
+  monospace: false,
+  reverse: false,
+  fg_index: null,
+  bg_index: null,
+  fg_hex: null,
+  bg_hex: null,
+};
+
 function message(overrides: Partial<IncomingMessage> = {}): IncomingMessage {
   return {
     network_id: NETWORK,
@@ -336,6 +350,44 @@ describe('session store', () => {
     useSessionStore.getState().applyTraffic(traffic);
 
     expect(useSessionStore.getState().traffic[NETWORK]).toHaveLength(1);
+  });
+
+  it('keeps the parsed formatting a traffic line arrived with', () => {
+    useSessionStore.getState().applyTraffic({
+      network_id: NETWORK,
+      direction: 'inbound',
+      line: ':alice!a@h PRIVMSG #rust :\u{0002}bold\u{0002}',
+      segments: [
+        {
+          text: ':alice!a@h PRIVMSG #rust :',
+          style: PLAIN_STYLE,
+        },
+        { text: 'bold', style: { ...PLAIN_STYLE, bold: true } },
+      ],
+      timestamp: 0,
+      seq: 1,
+    });
+
+    const line = useSessionStore.getState().traffic[NETWORK]?.[0];
+    expect(line?.segments).toHaveLength(2);
+    expect(line?.segments[1]?.style.bold).toBe(true);
+    // The literal text stays alongside it, so the server buffer can still show
+    // what actually arrived.
+    expect(line?.line).toBe(':alice!a@h PRIVMSG #rust :\u{0002}bold\u{0002}');
+  });
+
+  it('normalises a traffic line that carries no formatting', () => {
+    useSessionStore.getState().applyTraffic({
+      network_id: NETWORK,
+      direction: 'outbound',
+      line: 'PING :1',
+      timestamp: 0,
+      seq: 1,
+    });
+
+    // The backend omits the field entirely for plain lines; the store fills it
+    // in so the renderer never has to check for both shapes.
+    expect(useSessionStore.getState().traffic[NETWORK]?.[0]?.segments).toEqual([]);
   });
 
   it('removes every trace of a network', () => {

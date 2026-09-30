@@ -207,6 +207,12 @@ function LineRow({ row }: { row: DisplayRow }) {
 function TrafficRow({ line }: { line: TrafficLine }) {
   const inbound = line.direction === 'inbound';
 
+  // The literal form, with every control byte written out. It is both the
+  // fallback when a line carries no formatting and the tooltip when it does, so
+  // "what actually arrived" is always one hover away even though the line is
+  // drawn the way a reader expects to see it.
+  const literal = useMemo(() => escapeControlCharacters(line.line), [line.line]);
+
   return (
     <div className="flex gap-3 px-4 py-[2px] font-mono text-[12px] leading-[1.5] hover:bg-message-hover">
       <span
@@ -219,8 +225,8 @@ function TrafficRow({ line }: { line: TrafficLine }) {
       >
         {inbound ? '←' : '→'}
       </span>
-      <span className="min-w-0 flex-1 whitespace-pre-wrap break-all text-muted">
-        {escapeControlCharacters(line.line)}
+      <span title={literal} className="min-w-0 flex-1 whitespace-pre-wrap break-all text-muted">
+        <Body segments={line.segments} fallback={literal} />
       </span>
     </div>
   );

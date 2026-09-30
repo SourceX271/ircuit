@@ -107,6 +107,58 @@ pub struct MessageSegment {
     pub style: MessageStyle,
 }
 
+/// Project protocol formatting onto the flat shape the UI consumes.
+///
+/// Lives next to the types it builds rather than next to the connection code:
+/// this is the IPC contract's adapter, and the contract is what has to stay
+/// stable.
+pub(crate) fn convert_segments(segments: &[ircuit_state::MessageSegment]) -> Vec<MessageSegment> {
+    segments
+        .iter()
+        .map(|segment| {
+            let (fg_index, fg_hex) = split_color(segment.style.fg);
+            let (bg_index, bg_hex) = split_color(segment.style.bg);
+
+            MessageSegment {
+                text: segment.text.clone(),
+                style: MessageStyle {
+                    bold: segment.style.bold,
+                    italic: segment.style.italic,
+                    underline: segment.style.underline,
+                    strikethrough: segment.style.strikethrough,
+                    monospace: segment.style.monospace,
+                    reverse: segment.style.reverse,
+                    fg_index,
+                    bg_index,
+                    fg_hex,
+                    bg_hex,
+                },
+            }
+        })
+        .collect()
+}
+
+/// Map a normalized message kind onto the wire value the UI switches on.
+pub(crate) fn convert_kind(kind: ircuit_state::MessageKind) -> MessageKind {
+    match kind {
+        ircuit_state::MessageKind::Message => MessageKind::Message,
+        ircuit_state::MessageKind::Notice => MessageKind::Notice,
+        ircuit_state::MessageKind::Action => MessageKind::Action,
+        ircuit_state::MessageKind::System => MessageKind::System,
+    }
+}
+
+/// Colours arrive either as a palette index or as a 24-bit value; the renderer
+/// has to tell them apart, so they travel in separate fields rather than as a
+/// union the generated TypeScript would have to narrow.
+fn split_color(color: Option<ircuit_state::MessageColor>) -> (Option<u8>, Option<String>) {
+    match color {
+        Some(ircuit_state::MessageColor::Indexed(index)) => (Some(index), None),
+        Some(ircuit_state::MessageColor::Hex(value)) => (None, Some(format!("{value:06X}"))),
+        None => (None, None),
+    }
+}
+
 /// A line destined for a message list.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, tauri_specta::Event)]
 pub struct IncomingMessage {
@@ -147,10 +199,52 @@ pub struct IncomingMessage {
 pub struct RawTraffic {
     pub network_id: String,
     pub direction: TrafficDirection,
+    /// The line exactly as it went on the wire, with its formatting codes intact.
     pub line: String,
+    /// The same line parsed into styled runs, when it carries any formatting.
+    ///
+    /// Empty for the great majority of lines — `PING`, numerics, plain chatter —
+    /// so the ring buffer does not pay for a parse it will never show. The
+    /// frontend falls back to [`Self::line`] whenever this is empty.
+    ///
+    /// The raw text is kept alongside rather than replaced: the server buffer is
+    /// also the place someone looks to find out what actually arrived, and a
+    /// rendered line cannot answer "was that bold, or was it `\u{0002}`".
+    #[serde(default)]
+    pub segments: Vec<MessageSegment>,
     pub timestamp: u32,
     /// Monotonic per-network sequence; see [`IncomingMessage::seq`].
     pub seq: u32,
+}
+
+impl RawTraffic {
+    /// Build a traffic entry, parsing formatting only when there is any.
+    #[must_use]
+    pub fn new(
+        network_id: String,
+        direction: TrafficDirection,
+        line: String,
+        timestamp: u32,
+        seq: u32,
+    ) -> Self {
+        let parsed = ircuit_proto::formatting::parse(&line);
+        let styled = parsed
+            .iter()
+            .any(|segment| segment.style != ircuit_proto::formatting::Style::default());
+
+        Self {
+            network_id,
+            direction,
+            line,
+            segments: if styled {
+                convert_segments(&parsed)
+            } else {
+                Vec::new()
+            },
+            timestamp,
+            seq,
+        }
+    }
 }
 
 /// Recently emitted events for one network, for a UI that subscribed late.
