@@ -50,7 +50,16 @@ public static class IrcuitWindowCapture
 }
 
 $process = Get-Process -Name $ProcessName -ErrorAction Stop | Select-Object -First 1
-$handle = $process.MainWindowHandle
+$handle = [IntPtr]::Zero
+try {
+    . (Join-Path $PSScriptRoot 'find-window.ps1')
+    $handle = Get-IrcuitWindowHandle -ProcessName $ProcessName
+} catch {
+    # Fall back to the process's own idea of its main window rather than failing:
+    # an older Windows or an unusual app may not expose anything better.
+    $handle = $process.MainWindowHandle
+}
+
 if ($handle -eq [IntPtr]::Zero) {
     throw "Process '$ProcessName' has no main window yet."
 }

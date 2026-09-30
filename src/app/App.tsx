@@ -66,6 +66,15 @@ export function App() {
     void setWindowTitle(composeTitle(t('app.name'), highlightBuffers, unreadBuffers));
   }, [highlightBuffers, unreadBuffers, t]);
 
+  // Opening a conversation shows whatever is in memory; if that is nothing, the
+  // archive fills it in. One trigger point rather than one per way of switching
+  // buffers (tabs, sidebar, palette, shortcuts), which is also what makes it work
+  // for the buffer that is active at startup.
+  const loadHistory = useSessionStore((state) => state.loadHistory);
+  useEffect(() => {
+    if (activeBufferId !== null) void loadHistory(activeBufferId);
+  }, [activeBufferId, loadHistory]);
+
   const buffer = buffers.find((candidate) => candidate.id === activeBufferId) ?? null;
   const network = networks.find((candidate) => candidate.id === buffer?.networkId) ?? null;
 

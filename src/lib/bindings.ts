@@ -25,6 +25,21 @@ export const commands = {
 	getNetworkBacklog: (networkId: string) => typedError<NetworkBacklog, string>(__TAURI_INVOKE("get_network_backlog", { networkId })),
 	/**  The current state of every channel on a network. */
 	listChannels: (networkId: string) => typedError<ChannelSnapshot[], string>(__TAURI_INVOKE("list_channels", { networkId })),
+	/**
+	 *  One page of a buffer's stored history, oldest line first.
+	 * 
+	 *  Pass the cursor of the oldest line already on screen to walk further back.
+	 *  Omitting it returns the newest page, which is what opening a buffer wants.
+	 */
+	loadHistory: (networkId: string, buffer: string, before: {
+	at: number,
+	/**  Rowid as text; see [`HistoryMessage::id`]. */
+	id: string,
+} | null, limit: number | null) => typedError<HistoryPage, string>(__TAURI_INVOKE("load_history", { networkId, buffer, before, limit })),
+	/**  How many lines a buffer holds. */
+	countHistory: (networkId: string, buffer: string) => typedError<number, string>(__TAURI_INVOKE("count_history", { networkId, buffer })),
+	/**  Forget one buffer's history. */
+	clearHistory: (networkId: string, buffer: string | null) => typedError<number, string>(__TAURI_INVOKE("clear_history", { networkId, buffer })),
 	/**  Send a message to a channel or user. */
 	sendMessage: (networkId: string, target: string, text: string) => typedError<null, string>(__TAURI_INVOKE("send_message", { networkId, target, text })),
 	/**  Send a notice, which by convention must never trigger an automatic reply. */
@@ -173,14 +188,75 @@ export type CoreStatus = {
 	active_buffers: number,
 };
 
+/**  Where to continue paging backwards from. */
+export type HistoryCursor = {
+	at: number,
+	/**  Rowid as text; see [`HistoryMessage::id`]. */
+	id: string,
+};
+
+/**  One line of stored history on its way to the UI. */
+export type HistoryMessage = {
+	/**
+	 *  The database rowid, as text.
+	 * 
+	 *  A rowid does not fit the IPC integer rule (docs §7). It is an opaque
+	 *  handle to the UI — only ever handed back as a cursor, never arithmetic.
+	 */
+	id: string,
+	network_id: string,
+	/**  The conversation buffer this line belongs to. */
+	buffer: string,
+	nick: string,
+	kind: MessageKind,
+	/**
+	 *  The line with formatting codes removed.
+	 * 
+	 *  History stores text rather than styled runs: the codes were already
+	 *  interpreted once, and an archive that has to be re-parsed to be read is
+	 *  one schema change away from unreadable.
+	 */
+	body: string,
+	/**  Unix seconds. */
+	at: number,
+	is_self: boolean,
+};
+
+/**  One page of history, oldest line first. */
+export type HistoryPage = {
+	/**
+	 *  Oldest first — the order the UI draws them in, so a page can be prepended
+	 *  without reversing anything at the call site.
+	 */
+	messages: HistoryMessage[],
+	/**
+	 *  Whether this page reached the beginning of the buffer.
+	 * 
+	 *  Decided by the backend with one extra row, rather than by the UI guessing
+	 *  from a short page — a full page that happens to be the last one is
+	 *  otherwise indistinguishable from one that is not.
+	 */
+	exhausted: boolean,
+};
+
 /**  A line destined for a message list. */
 export type IncomingMessage = {
 	network_id: string,
 	/**  Sender's display name; empty for server-generated lines. */
 	nick: string,
 	kind: MessageKind,
-	/**  Channel or user this line belongs to. */
+	/**  Channel or user the line names, exactly as the protocol addressed it. */
 	target: string,
+	/**
+	 *  The conversation buffer this line belongs to.
+	 * 
+	 *  Not always `target`: a private message is addressed to *us*, while the
+	 *  conversation belongs to the sender. The backend resolves it (see
+	 *  `ircuit_state::view::ViewMessage::buffer`) because history is keyed by it
+	 *  — a UI that derived it differently would file lines under a key nothing
+	 *  reads and show an empty conversation, with no error anywhere.
+	 */
+	buffer: string,
 	/**  The line with formatting codes removed, for search and notifications. */
 	text: string,
 	/**  The same line with formatting preserved. Always at least one run. */

@@ -18,12 +18,18 @@
 .EXAMPLE
     powershell -File scripts/dev/ui-drive.ps1 -Click 1775,80 -Capture .cache/dark.png
     powershell -File scripts/dev/ui-drive.ps1 -Keys '^k' -Capture .cache/palette.png
+    powershell -File scripts/dev/ui-drive.ps1 -Hover 900,600 -Wheel -5 -Capture .cache/scrolled.png
 #>
 [CmdletBinding()]
 param(
     [string]$ProcessName = 'ircuit',
     # Window-relative X,Y to click.
     [int[]]$Click,
+    # Window-relative X,Y to move the pointer over without clicking. The wheel
+    # goes wherever the pointer is, so scrolling the message list needs this.
+    [int[]]$Hover,
+    # Wheel notches: positive scrolls up (towards older messages), negative down.
+    [int]$Wheel = 0,
     # SendKeys syntax, e.g. '^k' for Ctrl+K.
     [string]$Keys,
     [Parameter(Mandatory)][string]$Capture,
@@ -61,7 +67,10 @@ public static class IrcuitUiDrive
 }
 
 $process = Get-Process -Name $ProcessName -ErrorAction Stop | Select-Object -First 1
-$handle = $process.MainWindowHandle
+# Not `MainWindowHandle`: for a WebView2 app that can be a 15x15 helper window,
+# and every coordinate derived from it is then wrong. See find-window.ps1.
+. (Join-Path $PSScriptRoot 'find-window.ps1')
+$handle = Get-IrcuitWindowHandle -ProcessName $ProcessName
 if ($handle -eq [IntPtr]::Zero) { throw "Process '$ProcessName' has no main window." }
 
 $rect = New-Object IrcuitUiDrive+RECT
@@ -91,6 +100,26 @@ if ($Click -and $Click.Count -eq 2) {
 if ($Keys) {
     Write-Host "sending keys '$Keys'"
     [System.Windows.Forms.SendKeys]::SendWait($Keys)
+}
+
+if ($Hover -and $Hover.Count -eq 2) {
+    $x = $originX + $Hover[0]
+    $y = $originY + $Hover[1]
+    Write-Host "moving pointer to window-relative ($($Hover[0]),$($Hover[1])) -> screen ($x,$y)"
+    [IrcuitUiDrive]::SetCursorPos($x, $y) | Out-Null
+    Start-Sleep -Milliseconds 150
+}
+
+if ($Wheel -ne 0) {
+    Write-Host "scrolling $Wheel notches"
+    # One notch is 120 units, and the data parameter is unsigned: a downwards
+    # scroll is a negative signed value written as its two's complement.
+    $delta = $Wheel * 120
+    if ($delta -lt 0) { $delta += 0x100000000 }
+
+    # The wheel event goes to whatever is under the pointer, which is why -Hover
+    # exists.
+    [IrcuitUiDrive]::mouse_event(0x0800, 0, 0, [uint32]$delta, [UIntPtr]::Zero)
 }
 
 Start-Sleep -Seconds $Settle

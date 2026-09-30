@@ -58,6 +58,62 @@ impl ViewMessage {
     pub fn is_activity(&self) -> bool {
         !self.is_self && matches!(self.kind, MessageKind::Message | MessageKind::Action)
     }
+
+    /// Which conversation this line belongs to.
+    ///
+    /// Not the same as [`Self::target`], and the difference is the whole point:
+    /// a private message is addressed *to us* but belongs to the sender's
+    /// conversation, or every PM in the client would pile into one buffer named
+    /// after ourselves.
+    ///
+    /// This lives here rather than in the UI because history is keyed by it. Two
+    /// independent implementations that disagree would not look like a bug — the
+    /// client would simply show an empty conversation, because the lines were
+    /// filed under a key nothing ever reads.
+    ///
+    /// Returns `''` for server chatter, which is the server buffer.
+    #[must_use]
+    pub fn buffer(&self, self_nick: &str) -> String {
+        if is_channel_name(&self.target) {
+            return self.target.clone();
+        }
+
+        // Joins, parts, mode changes and numerics carry no target.
+        if self.target.is_empty() {
+            return String::new();
+        }
+
+        let addressed_to_us = self.target.eq_ignore_ascii_case(self_nick);
+
+        // An inbound PM belongs to the sender; our own line belongs to whoever we
+        // sent it to, which is `target` in both cases once the addressee is us.
+        if addressed_to_us {
+            if self.is_self {
+                self.target.clone()
+            } else {
+                self.nick.clone()
+            }
+        } else {
+            self.target.clone()
+        }
+    }
+}
+
+/// Whether a target names a channel rather than a person.
+///
+/// Any of IRC's channel prefixes counts, not just `#`: `&`, `+` and `!` are all
+/// legal and do occur on real networks.
+///
+/// Deliberately not driven by the server's `CHANTYPES`: a nickname may not begin
+/// with any of these characters, so the answer is the same on every server.
+/// `Isupport::is_channel` exists for the cases where the *server's* own idea of
+/// a channel matters, which this is not.
+#[must_use]
+pub fn is_channel_name(target: &str) -> bool {
+    matches!(
+        target.chars().next(),
+        Some('#') | Some('&') | Some('+') | Some('!')
+    )
 }
 
 /// A single unstyled run, for lines that carry no formatting.
@@ -371,6 +427,76 @@ mod tests {
         assert_eq!(view.kind, MessageKind::Notice);
         assert_eq!(view.target, "me");
         assert!(!view.is_activity(), "a notice is not conversation activity");
+    }
+
+    #[test]
+    fn a_channel_line_belongs_to_its_channel() {
+        let view = normalize(None, &message(":alice!a@h PRIVMSG #rust :hi"), NOW).unwrap();
+        assert_eq!(view.buffer("me"), "#rust");
+    }
+
+    #[test]
+    fn an_inbound_private_message_belongs_to_the_sender() {
+        let view = normalize(None, &message(":alice!a@h PRIVMSG me :hi"), NOW).unwrap();
+
+        // The protocol says it is addressed to us; the conversation is alice's.
+        // Keying history by `target` here would file every PM under our own nick.
+        assert_eq!(view.target, "me");
+        assert_eq!(view.buffer("me"), "alice");
+    }
+
+    #[test]
+    fn our_own_private_message_belongs_to_the_recipient() {
+        let view = normalize(Some("me"), &message(":me!m@h PRIVMSG bob :hi"), NOW).unwrap();
+        assert!(view.is_self);
+        assert_eq!(view.buffer("me"), "bob");
+    }
+
+    #[test]
+    fn a_join_belongs_to_the_channel_it_joins() {
+        let view = normalize(None, &message(":alice!a@h JOIN #rust"), NOW).unwrap();
+        assert_eq!(view.buffer("me"), "#rust");
+    }
+
+    #[test]
+    fn a_line_without_a_target_belongs_to_the_server_buffer() {
+        // Not reachable through `normalize` today — every command it keeps is
+        // either channel- or person-addressed — but the UI has a server buffer,
+        // and something has to be able to say "this line goes there".
+        let view = ViewMessage {
+            nick: String::new(),
+            kind: MessageKind::System,
+            target: String::new(),
+            text: "shutting down".to_owned(),
+            segments: Vec::new(),
+            timestamp: NOW,
+            is_self: false,
+        };
+
+        assert_eq!(view.buffer("me"), "");
+    }
+
+    #[test]
+    fn the_addressee_is_matched_without_regard_to_case() {
+        let view = normalize(None, &message(":alice!a@h PRIVMSG ME :hi"), NOW).unwrap();
+        assert_eq!(view.buffer("me"), "alice");
+    }
+
+    #[test]
+    fn a_private_message_to_a_third_party_keeps_its_target() {
+        // Not addressed to us and not from us: it belongs where it says, which is
+        // what a bouncer playback or a `WHOIS`-style notice looks like.
+        let view = normalize(Some("me"), &message(":alice!a@h PRIVMSG bob :hi"), NOW).unwrap();
+        assert_eq!(view.buffer("me"), "bob");
+    }
+
+    #[test]
+    fn every_channel_prefix_counts() {
+        for name in ["#rust", "&local", "+modeless", "!12345chan"] {
+            assert!(is_channel_name(name), "{name} should be a channel");
+        }
+        assert!(!is_channel_name("alice"));
+        assert!(!is_channel_name(""));
     }
 
     #[test]

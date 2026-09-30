@@ -6,9 +6,60 @@
 pub mod bindings;
 pub mod commands;
 pub mod events;
+pub mod history;
 pub mod logging;
 pub mod net;
 pub mod opener;
+
+use std::sync::Arc;
+
+use tauri::Manager;
+
+/// Where the history database lives under the app data directory.
+const HISTORY_FILE: &str = "history.sqlite";
+
+/// Open the history database, falling back to one that forgets.
+///
+/// Losing the archive is bad; refusing to start the client because the archive
+/// cannot be opened is worse. A user on a read-only home directory, or with a
+/// database left behind by a newer build, can still chat — the log says what they
+/// are missing.
+fn open_history(app: &tauri::AppHandle) -> Arc<history::HistoryStore> {
+    let path = app
+        .path()
+        .app_data_dir()
+        .ok()
+        .map(|directory| directory.join(HISTORY_FILE));
+
+    match path.as_deref().map(history::HistoryStore::open) {
+        Some(Ok(store)) => {
+            if let Some(path) = path.as_deref() {
+                tracing::info!(path = %path.display(), "历史数据库已打开");
+            }
+            Arc::new(store)
+        }
+        Some(Err(error)) => {
+            tracing::warn!(%error, "无法打开历史数据库；本次运行不会保存聊天记录");
+            forgetful()
+        }
+        None => {
+            tracing::warn!("找不到应用数据目录；本次运行不会保存聊天记录");
+            forgetful()
+        }
+    }
+}
+
+/// The last resort when no database can be opened at all.
+///
+/// Panicking here would mean no client whatsoever, and the only ways to reach it
+/// are a failed allocation or a broken SQLite build — at which point the process
+/// has larger problems than chat history.
+fn forgetful() -> Arc<history::HistoryStore> {
+    Arc::new(
+        history::HistoryStore::in_memory()
+            .expect("SQLite could not even open an in-memory database"),
+    )
+}
 
 /// 启动桌面应用。
 pub fn run() {
@@ -31,6 +82,11 @@ pub fn run() {
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
             builder.mount_events(app);
+
+            // Registered here rather than before `setup` because the app data
+            // directory is only resolvable once there is an app handle.
+            app.manage(open_history(app.handle()));
+
             net::spawn_status_heartbeat(app.handle().clone(), heartbeat_manager);
 
             #[cfg(debug_assertions)]

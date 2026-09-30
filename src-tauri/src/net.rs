@@ -10,7 +10,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tauri_specta::Event as _;
 use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, info, warn};
@@ -28,6 +28,7 @@ use crate::events::{
     convert_kind, convert_segments, ChannelClosed, ChannelSnapshot, ConnectionState, CoreStatus,
     IncomingMessage, MemberInfo, NetworkBacklog, NetworkStatus, RawTraffic, TrafficDirection,
 };
+use crate::history::{new_message, HistoryStore};
 
 /// How often the core status heartbeat fires.
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(2);
@@ -493,19 +494,9 @@ async fn pump(
                 manager.record_traffic(&network_id, traffic).await;
 
                 if let Some(normalized) = view::normalize(Some(&self_nick), &message, timestamp) {
-                    let incoming = IncomingMessage {
-                        network_id: network_id.clone(),
-                        nick: normalized.nick,
-                        kind: convert_kind(normalized.kind),
-                        target: normalized.target,
-                        text: normalized.text,
-                        segments: convert_segments(&normalized.segments),
-                        timestamp: normalized.timestamp,
-                        is_self: normalized.is_self,
-                        self_nick: Some(self_nick.clone()),
-                        seq: manager.next_seq(&network_id).await,
-                    };
+                    let incoming = to_incoming(&manager, &network_id, normalized, &self_nick).await;
                     let _ = incoming.clone().emit(&app);
+                    remember(&app, &incoming).await;
                     manager.record_message(&network_id, incoming).await;
                 }
 
@@ -524,19 +515,9 @@ async fn pump(
                 // showing it twice would make the console lie about the wire.
                 if let Some(normalized) = view::normalize(Some(&self_nick), &message, now_seconds())
                 {
-                    let incoming = IncomingMessage {
-                        network_id: network_id.clone(),
-                        nick: normalized.nick,
-                        kind: convert_kind(normalized.kind),
-                        target: normalized.target,
-                        text: normalized.text,
-                        segments: convert_segments(&normalized.segments),
-                        timestamp: normalized.timestamp,
-                        is_self: normalized.is_self,
-                        self_nick: Some(self_nick.clone()),
-                        seq: manager.next_seq(&network_id).await,
-                    };
+                    let incoming = to_incoming(&manager, &network_id, normalized, &self_nick).await;
                     let _ = incoming.clone().emit(&app);
+                    remember(&app, &incoming).await;
                     manager.record_message(&network_id, incoming).await;
                 }
             }
@@ -551,6 +532,53 @@ async fn pump(
         .await;
 
     warn!(%network_id, "connection driver stopped");
+}
+
+/// Persist one line, when this process has a history database at all.
+///
+/// Looked up on the app handle rather than threaded through the manager: history
+/// is an optional side effect of showing a line, not part of a connection. This
+/// way every test that builds a manager without a database keeps working, and a
+/// build that cannot open one keeps chatting.
+async fn remember(app: &AppHandle, message: &IncomingMessage) {
+    let Some(history) = app.try_state::<Arc<HistoryStore>>() else {
+        return;
+    };
+
+    // The store logs the first failure itself; a line that cannot be saved is not
+    // worth interrupting the conversation for, and returning the error here would
+    // only invite a caller to do exactly that.
+    let _ = history.record(new_message(message)).await;
+}
+
+/// Map a normalized protocol line onto the IPC shape the UI consumes.
+///
+/// One place, because the two call sites — a line off the wire and our own local
+/// echo — must agree field by field, and because the buffer key has to be
+/// resolved the same way both times or history ends up under keys nothing reads.
+async fn to_incoming(
+    manager: &NetworkManager,
+    network_id: &str,
+    normalized: ircuit_state::ViewMessage,
+    self_nick: &str,
+) -> IncomingMessage {
+    // Computed before the struct literal: `target` is listed first and would move
+    // the value out of `normalized` before `buffer()` could borrow it.
+    let buffer = normalized.buffer(self_nick);
+
+    IncomingMessage {
+        network_id: network_id.to_owned(),
+        nick: normalized.nick,
+        kind: convert_kind(normalized.kind),
+        target: normalized.target,
+        buffer,
+        text: normalized.text,
+        segments: convert_segments(&normalized.segments),
+        timestamp: normalized.timestamp,
+        is_self: normalized.is_self,
+        self_nick: Some(self_nick.to_owned()),
+        seq: manager.next_seq(network_id).await,
+    }
 }
 
 /// Turn a UI request into a validated connection configuration.

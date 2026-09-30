@@ -20,6 +20,9 @@ import {
   type ConnectionState,
   type CoreModule,
   type CoreStatus,
+  type HistoryCursor,
+  type HistoryMessage,
+  type HistoryPage,
   type IncomingMessage,
   type MemberInfo,
   type MessageKind,
@@ -40,6 +43,9 @@ export type {
   ConnectionState,
   CoreModule,
   CoreStatus,
+  HistoryCursor,
+  HistoryMessage,
+  HistoryPage,
   IncomingMessage,
   MemberInfo,
   MessageKind,
@@ -101,6 +107,35 @@ export function getNetworkBacklog(networkId: string): Promise<NetworkBacklog> {
 /** 向频道或用户发送消息。 */
 export async function sendMessage(networkId: string, target: string, text: string): Promise<void> {
   await unwrap(commands.sendMessage(networkId, target, text));
+}
+
+/**
+ * 取某个会话的一页历史，最旧的在前。
+ *
+ * 不传 `before` 即取最新一页（打开会话时用）；传最旧一行的游标则继续往前翻。
+ */
+export function loadHistory(
+  networkId: string,
+  buffer: string,
+  before: HistoryCursor | null,
+  limit: number,
+): Promise<HistoryPage> {
+  return unwrap(commands.loadHistory(networkId, buffer, before, limit));
+}
+
+/** 某个会话在存档里有多少条。 */
+export function countHistory(networkId: string, buffer: string): Promise<number> {
+  return unwrap(commands.countHistory(networkId, buffer));
+}
+
+/**
+ * 清除历史：给了 `buffer` 就清那一个会话，否则清掉整个网络。
+ *
+ * 注意空字符串是**服务器缓冲区**，不是「全部」——要清整个网络就不传这个参数。
+ * 返回被删掉的条数。
+ */
+export function clearHistory(networkId: string, buffer?: string): Promise<number> {
+  return unwrap(commands.clearHistory(networkId, buffer ?? null));
 }
 
 /** 发送 NOTICE。按惯例 NOTICE 不得触发自动回复。 */

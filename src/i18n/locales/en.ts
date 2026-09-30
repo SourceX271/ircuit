@@ -117,6 +117,12 @@ export const en: TranslationSchema = {
     modes: 'Channel modes',
   },
 
+  history: {
+    loading: 'Loading earlier messages…',
+    failed: 'Could not load history — scroll up to retry',
+    start: 'Start of the archive',
+  },
+
   members: {
     title: 'Members',
     count: '{{count}} members',

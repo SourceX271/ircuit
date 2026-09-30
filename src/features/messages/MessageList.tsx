@@ -1,5 +1,14 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Fragment, useEffect, useMemo, useRef, type MouseEvent, type ReactNode } from 'react';
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  type MouseEvent,
+  type ReactNode,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/lib/cn';
@@ -247,14 +256,19 @@ function VirtualLog<T>({
   getKey,
   renderItem,
   estimateSize = 40,
+  onReachTop,
 }: {
   items: readonly T[];
   getKey: (item: T, index: number) => string;
   renderItem: (item: T) => ReactNode;
   estimateSize?: number;
+  /** Called when the viewport is at (or near) the very top. */
+  onReachTop?: () => void;
 }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
+  const firstKey = items.length > 0 ? getKey(items[0] as T, 0) : null;
+  const previous = useRef<{ key: string | null; height: number } | null>(null);
 
   const virtualizer = useVirtualizer({
     count: items.length,
@@ -263,11 +277,33 @@ function VirtualLog<T>({
     overscan: 12,
   });
 
+  // Loading older messages grows the content *above* the viewport, which the
+  // browser answers by leaving `scrollTop` alone — so the lines the user was
+  // reading slide down by the height of everything prepended. Putting the
+  // difference back keeps the same line under the cursor, which is the entire
+  // difference between "scrolling back through history" and "being thrown
+  // around by it".
+  useLayoutEffect(() => {
+    const element = scrollerRef.current;
+    if (!element) return;
+
+    const height = element.scrollHeight;
+    const before = previous.current;
+
+    if (before && before.key !== null && before.key !== firstKey) {
+      element.scrollTop += height - before.height;
+    }
+
+    previous.current = { key: firstKey, height };
+  }, [firstKey, items.length]);
+
   const onScroll = () => {
     const element = scrollerRef.current;
     if (!element) return;
     // A little slack, so nudging the wheel does not switch stickiness off.
     stickToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 48;
+
+    if (element.scrollTop <= 64) onReachTop?.();
   };
 
   useEffect(() => {
@@ -312,10 +348,28 @@ export function MessageList() {
   const buffers = useSessionStore((state) => state.buffers);
   const lines = useSessionStore((state) => state.lines);
   const traffic = useSessionStore((state) => state.traffic);
+  const historyState = useSessionStore((state) =>
+    activeBufferId === null ? undefined : state.history[activeBufferId],
+  );
+  const loadOlder = useSessionStore((state) => state.loadOlder);
 
   const buffer = buffers.find((candidate) => candidate.id === activeBufferId) ?? null;
   const entries = buffer ? (lines[buffer.id] ?? []) : [];
   const items = useMemo(() => flattenBlocks(buildBlocks(entries)), [entries]);
+
+  const openOlder = useCallback(() => {
+    if (activeBufferId !== null) void loadOlder(activeBufferId);
+  }, [activeBufferId, loadOlder]);
+
+  const historyStatus = !historyState
+    ? null
+    : historyState.loading
+      ? t('history.loading')
+      : historyState.error
+        ? t('history.failed')
+        : historyState.exhausted
+          ? t('history.start')
+          : null;
 
   if (!buffer) {
     return (
@@ -353,23 +407,32 @@ export function MessageList() {
   if (entries.length === 0) {
     return (
       <div className="min-h-0 flex-1 overflow-y-auto py-2">
-        <p className="px-4 text-[12.5px] text-faint">{t('topic.channelHint')}</p>
+        <p className="px-4 text-[12.5px] text-faint">{historyStatus ?? t('topic.channelHint')}</p>
       </div>
     );
   }
 
   return (
-    <VirtualLog
-      items={items}
-      getKey={(item) => item.key}
-      estimateSize={28}
-      renderItem={(item) =>
-        item.kind === 'day' ? (
-          <DayDivider day={item.day} locale={i18n.language} />
-        ) : (
-          <LineRow row={item.row} />
-        )
-      }
-    />
+    <div className="flex min-h-0 flex-1 flex-col">
+      {historyStatus ? (
+        <div className="shrink-0 border-b border-line px-4 py-1 text-center text-[11px] text-faint">
+          {historyStatus}
+        </div>
+      ) : null}
+
+      <VirtualLog
+        items={items}
+        getKey={(item) => item.key}
+        estimateSize={28}
+        onReachTop={openOlder}
+        renderItem={(item) =>
+          item.kind === 'day' ? (
+            <DayDivider day={item.day} locale={i18n.language} />
+          ) : (
+            <LineRow row={item.row} />
+          )
+        }
+      />
+    </div>
   );
 }

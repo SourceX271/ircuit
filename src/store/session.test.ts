@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   bufferId,
@@ -7,12 +7,20 @@ import {
   MAX_TRAFFIC_LINES,
   parseBufferId,
   resetLineSequence,
-  resolveBufferTarget,
   useSessionStore,
 } from './session';
-import type { IncomingMessage, NetworkStatus } from '@/lib/ipc';
+import type { HistoryMessage, IncomingMessage, NetworkStatus } from '@/lib/ipc';
 import { createRule } from '@/lib/highlight';
 import { useNotificationsStore } from './notifications';
+
+// The archive is the one thing a store test cannot reach: it lives behind IPC.
+// Everything else in the module stays real.
+const { loadHistoryPage } = vi.hoisted(() => ({ loadHistoryPage: vi.fn() }));
+
+vi.mock('@/lib/ipc', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/ipc')>()),
+  loadHistory: loadHistoryPage,
+}));
 
 const NETWORK = 'irc.libera.chat:6697';
 
@@ -38,6 +46,10 @@ function message(overrides: Partial<IncomingMessage> = {}): IncomingMessage {
     nick: 'alice',
     kind: 'message',
     target: '#rust',
+    // Follows `target` unless a test is deliberately exercising the case where the
+    // two differ, which is exactly a private message. An explicit `buffer` in
+    // `overrides` still wins, because the spread below comes last.
+    buffer: overrides.target ?? '#rust',
     text: 'hello',
     segments: [
       {
@@ -90,12 +102,14 @@ beforeEach(() => {
     lastSeq: {},
     channels: {},
     ignored: {},
+    history: {},
   });
   // The session store writes into the notification stack, so it has to start
   // every test empty or the counts leak between cases.
   useNotificationsStore.setState({ rules: [], notifications: [] });
   resetLineSequence();
   nextSeq = 1;
+  loadHistoryPage.mockReset();
 });
 
 describe('buffer ids', () => {
@@ -129,39 +143,6 @@ describe('isChannelName', () => {
   it('treats nicknames as conversations', () => {
     expect(isChannelName('alice')).toBe(false);
     expect(isChannelName('')).toBe(false);
-  });
-});
-
-describe('resolveBufferTarget', () => {
-  it('routes a channel message to its channel', () => {
-    expect(resolveBufferTarget({ target: '#rust', nick: 'alice', is_self: false }, 'me')).toBe(
-      '#rust',
-    );
-  });
-
-  it('routes server chatter to the server buffer', () => {
-    expect(resolveBufferTarget({ target: '', nick: 'alice', is_self: false }, 'me')).toBe('');
-  });
-
-  it('files an incoming private message under the sender', () => {
-    // The protocol addresses it to us, but the conversation is with alice.
-    expect(resolveBufferTarget({ target: 'me', nick: 'alice', is_self: false }, 'me')).toBe(
-      'alice',
-    );
-  });
-
-  it('files our own echoed private message under the recipient', () => {
-    expect(resolveBufferTarget({ target: 'bob', nick: 'me', is_self: true }, 'me')).toBe('bob');
-  });
-
-  it('matches our nickname case-insensitively', () => {
-    expect(resolveBufferTarget({ target: 'ME', nick: 'alice', is_self: false }, 'me')).toBe(
-      'alice',
-    );
-  });
-
-  it('falls back to the target when we do not know our nickname', () => {
-    expect(resolveBufferTarget({ target: 'me', nick: 'alice', is_self: false }, null)).toBe('me');
   });
 });
 
@@ -534,5 +515,208 @@ describe('session store', () => {
 
     useSessionStore.getState().applyMessage(message({ target: '#rust', text: 'me: ping' }));
     expect(useNotificationsStore.getState().notifications).toHaveLength(0);
+  });
+});
+
+describe('history paging', () => {
+  const ID = bufferId(NETWORK, '#rust');
+
+  function stored(overrides: Partial<HistoryMessage> = {}): HistoryMessage {
+    return {
+      id: '1',
+      network_id: NETWORK,
+      buffer: '#rust',
+      nick: 'alice',
+      kind: 'message',
+      body: 'hello',
+      at: 1_700_000_000,
+      is_self: false,
+      ...overrides,
+    };
+  }
+
+  /** Newest first, the way the archive returns a page. */
+  function page(messages: HistoryMessage[], exhausted: boolean) {
+    return { messages, exhausted };
+  }
+
+  beforeEach(() => {
+    useSessionStore.getState().applyNetworkStatus(status());
+  });
+
+  it('fills an empty buffer from the archive, oldest first', async () => {
+    loadHistoryPage.mockResolvedValue(
+      page([stored({ id: '1', body: 'oldest' }), stored({ id: '2', body: 'newest' })], true),
+    );
+
+    await useSessionStore.getState().loadHistory(ID);
+
+    const lines = useSessionStore.getState().lines[ID] ?? [];
+    expect(lines.map((line) => line.text)).toEqual(['oldest', 'newest']);
+    expect(lines[0]?.historyId).toBe('1');
+    expect(useSessionStore.getState().history[ID]?.exhausted).toBe(true);
+  });
+
+  it('leaves a buffer that already has lines alone', async () => {
+    useSessionStore.getState().applyMessage(message({ target: '#rust', text: 'live' }));
+
+    await useSessionStore.getState().loadHistory(ID);
+
+    // Whatever is in memory is newer than the archive's newest page, so loading
+    // it could only add duplicates.
+    expect(loadHistoryPage).not.toHaveBeenCalled();
+    expect(useSessionStore.getState().lines[ID]?.map((line) => line.text)).toEqual(['live']);
+  });
+
+  it('asks for the page before the oldest line on screen', async () => {
+    useSessionStore.setState({
+      lines: {
+        [ID]: [
+          {
+            id: 'line-1',
+            nick: 'alice',
+            kind: 'message',
+            text: 'oldest on screen',
+            segments: [],
+            timestamp: 1_700_000_050,
+            isSelf: false,
+            highlight: false,
+            historyId: '77',
+          },
+        ],
+      },
+    });
+    loadHistoryPage.mockResolvedValue(page([stored({ id: '50', body: 'even older' })], false));
+
+    await useSessionStore.getState().loadOlder(ID);
+
+    expect(loadHistoryPage).toHaveBeenCalledWith(
+      NETWORK,
+      '#rust',
+      { at: 1_700_000_050, id: '77' },
+      100,
+    );
+    const lines = useSessionStore.getState().lines[ID] ?? [];
+    expect(lines.map((line) => line.text)).toEqual(['even older', 'oldest on screen']);
+  });
+
+  it('does not show a line twice when the archive overlaps what arrived live', async () => {
+    // The shape of the race: a page is requested, and the same lines arrive over
+    // the event stream before the answer does.
+    useSessionStore
+      .getState()
+      .applyMessage(message({ target: '#rust', text: 'both places', timestamp: 1_700_000_000 }));
+    loadHistoryPage.mockResolvedValue(
+      page([stored({ id: '9', body: 'both places', at: 1_700_000_000 })], false),
+    );
+
+    // Force the load even though the buffer is no longer empty, which is what the
+    // store would do if the page had been in flight when the line arrived.
+    await useSessionStore.getState().loadOlder(ID);
+
+    const lines = useSessionStore.getState().lines[ID] ?? [];
+    expect(lines.filter((line) => line.text === 'both places')).toHaveLength(1);
+  });
+
+  it('stops asking once the beginning has been reached', async () => {
+    loadHistoryPage.mockResolvedValue(page([stored({ body: 'only line' })], true));
+
+    await useSessionStore.getState().loadHistory(ID);
+    await useSessionStore.getState().loadOlder(ID);
+
+    expect(loadHistoryPage).toHaveBeenCalledTimes(1);
+    expect(useSessionStore.getState().history[ID]?.exhausted).toBe(true);
+  });
+
+  it('surfaces a failure without disturbing what is on screen', async () => {
+    loadHistoryPage.mockRejectedValue(new Error('database is locked'));
+
+    await useSessionStore.getState().loadHistory(ID);
+
+    const state = useSessionStore.getState();
+    expect(state.history[ID]?.error).toContain('database is locked');
+    expect(state.history[ID]?.loading).toBe(false);
+    expect(state.lines[ID] ?? []).toEqual([]);
+  });
+
+  it('does not treat loaded history as unread activity', async () => {
+    // A conversation opened by hand has a buffer and no lines, which is when the
+    // newest page is what fills it.
+    useSessionStore.getState().openQuery(NETWORK, 'alice');
+    const query = bufferId(NETWORK, 'alice');
+    loadHistoryPage.mockResolvedValue(
+      page(
+        [
+          {
+            id: '1',
+            network_id: NETWORK,
+            buffer: 'alice',
+            nick: 'alice',
+            kind: 'message',
+            body: 'me: ping',
+            at: 1_700_000_000,
+            is_self: false,
+          },
+        ],
+        true,
+      ),
+    );
+
+    await useSessionStore.getState().loadHistory(query);
+
+    const buffer = useSessionStore.getState().buffers.find((entry) => entry.id === query);
+    expect(buffer?.unread).toBe(0);
+    expect(buffer?.highlight).toBe(false);
+  });
+
+  it('pages back from a live line, which has no row id yet', async () => {
+    // The state after a restart plus a rejoin: the buffer holds live lines, the
+    // archive holds everything before them. Waiting for a row id would make
+    // "scroll up" do nothing at all.
+    useSessionStore
+      .getState()
+      .applyMessage(message({ target: '#rust', text: 'live line', timestamp: 1_700_000_100 }));
+    loadHistoryPage.mockResolvedValue(page([stored({ id: '3', body: 'archived', at: 5 })], true));
+
+    await useSessionStore.getState().loadOlder(ID);
+
+    expect(loadHistoryPage).toHaveBeenCalledWith(
+      NETWORK,
+      '#rust',
+      { at: 1_700_000_100, id: '0' },
+      100,
+    );
+    const lines = useSessionStore.getState().lines[ID] ?? [];
+    expect(lines.map((line) => line.text)).toEqual(['archived', 'live line']);
+  });
+
+  it('recomputes a highlight from the archive against the current rules', async () => {
+    useNotificationsStore.setState({
+      rules: [createRule('ping')],
+      notifications: [],
+    });
+    useSessionStore.getState().openQuery(NETWORK, 'alice');
+    const query = bufferId(NETWORK, 'alice');
+    loadHistoryPage.mockResolvedValue(
+      page(
+        [
+          {
+            id: '1',
+            network_id: NETWORK,
+            buffer: 'alice',
+            nick: 'alice',
+            kind: 'message',
+            body: 'me: ping',
+            at: 1_700_000_000,
+            is_self: false,
+          },
+        ],
+        true,
+      ),
+    );
+
+    await useSessionStore.getState().loadHistory(query);
+
+    expect(useSessionStore.getState().lines[query]?.[0]?.highlight).toBe(true);
   });
 });

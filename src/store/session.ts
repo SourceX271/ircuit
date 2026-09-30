@@ -6,17 +6,20 @@
  * the bookkeeping the backend has no reason to know about (unread counts, which
  * buffer is on screen).
  *
- * In-memory only for now. M3 moves history into SQLite with paging and search;
- * the caps below are what keeps a long-running session's memory bounded until
- * then.
+ * The in-memory rings stay bounded; the archive behind them does not. Scrolling
+ * to the top of a buffer pulls the previous page from SQLite, which is why a
+ * buffer's `lines` array is not just "what arrived this session".
  */
 
 import { create } from 'zustand';
 
 import { isHighlight } from '@/lib/highlight';
+import { loadHistory as loadHistoryPage } from '@/lib/ipc';
 import type {
   ChannelClosed,
   ChannelSnapshot,
+  HistoryCursor,
+  HistoryPage,
   IncomingMessage,
   MessageKind,
   MessageSegment,
@@ -27,6 +30,33 @@ import type {
 } from '@/lib/ipc';
 
 import { nextNotificationId, shouldNotify, useNotificationsStore } from './notifications';
+
+/** How many lines one page of history holds. */
+export const HISTORY_PAGE_SIZE = 100;
+
+/** How far back the archive has been walked for one buffer. */
+export interface HistoryState {
+  /** A page is in flight; further scroll events must not start another. */
+  loading: boolean;
+  /** The beginning of the buffer has been reached. */
+  exhausted: boolean;
+  /** Why the last page failed, if it did. */
+  error: string | null;
+}
+
+/** An unstyled run, for text with no formatting codes left in it. */
+const PLAIN_STYLE = {
+  bold: false,
+  italic: false,
+  underline: false,
+  strikethrough: false,
+  monospace: false,
+  reverse: false,
+  fg_index: null,
+  bg_index: null,
+  fg_hex: null,
+  bg_hex: null,
+} as const;
 
 export type BufferKind = 'server' | 'channel' | 'query';
 
@@ -59,6 +89,14 @@ export interface SessionLine {
   isSelf: boolean;
   /** Whether the line mentions us. */
   highlight: boolean;
+  /**
+   * The row this line came from, when it was loaded from history.
+   *
+   * Live lines have none: they are stored asynchronously, and waiting for a rowid
+   * before showing a message would put a disk write in front of every line. Its
+   * only use is as the cursor for paging further back.
+   */
+  historyId?: string;
 }
 
 /** One raw protocol line, for the server buffer. */
@@ -105,31 +143,6 @@ export function parseBufferId(id: string): { networkId: string; target: string }
  */
 export function isChannelName(target: string): boolean {
   return target.startsWith('#') || target.startsWith('&');
-}
-
-/**
- * Decide which buffer a line belongs to.
- *
- * The tricky case is a private message: the protocol addresses it to *us*, but
- * the conversation belongs under the sender's name, otherwise every PM would
- * pile into one buffer named after ourselves.
- */
-export function resolveBufferTarget(
-  message: Pick<IncomingMessage, 'target' | 'nick' | 'is_self'>,
-  selfNick: string | null,
-): string {
-  if (isChannelName(message.target)) return message.target;
-
-  // Server chatter (joins, quits, mode changes) carries no target.
-  if (message.target === '') return '';
-
-  const addressedToUs =
-    selfNick !== null && message.target.toLowerCase() === selfNick.toLowerCase();
-
-  // An inbound PM belongs to the sender; our own echo belongs to the recipient.
-  if (addressedToUs) return message.is_self ? message.target : message.nick;
-
-  return message.target;
 }
 
 function kindForTarget(target: string): BufferKind {
@@ -212,6 +225,14 @@ export interface SessionState {
    * at the last moment would still let them make noise.
    */
   ignored: Record<string, string[]>;
+  /**
+   * How far back the archive has been walked, per buffer.
+   *
+   * `loading` is what stops a scroll gesture from firing the same page several
+   * times; `exhausted` is set once a page comes back short, so the UI can stop
+   * offering "load more" without another round trip.
+   */
+  history: Record<string, HistoryState>;
 
   setNetworks: (networks: NetworkSummary[]) => void;
   applyNetworkStatus: (status: NetworkStatus) => void;
@@ -228,6 +249,15 @@ export interface SessionState {
   clearBuffer: (id: string) => void;
   toggleIgnored: (networkId: string, nick: string) => void;
   removeNetwork: (networkId: string) => void;
+  /**
+   * Load the newest page of a buffer from the archive.
+   *
+   * Does nothing if the buffer already has lines: whatever is in memory is
+   * strictly newer, and re-loading would duplicate it.
+   */
+  loadHistory: (id: string) => Promise<void>;
+  /** Load the page before the oldest line on screen. */
+  loadOlder: (id: string) => Promise<void>;
 }
 
 export const useSessionStore = create<SessionState>((set, get) => ({
@@ -239,6 +269,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   lastSeq: {},
   channels: {},
   ignored: {},
+  history: {},
 
   setNetworks: (networks) => {
     set((state) => {
@@ -304,7 +335,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       return;
     }
 
-    const target = resolveBufferTarget(message, selfNick);
+    // Which conversation this belongs to is decided by the backend, because
+    // history is stored under the same key. Deriving it twice is how a private
+    // message ends up in a buffer nothing ever reads.
+    const target = message.buffer;
     const id = bufferId(message.network_id, target);
     const active = state.activeBufferId === id;
 
@@ -540,7 +574,120 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       };
     });
   },
+
+  loadHistory: async (id) => {
+    const state = get();
+    // Memory wins. Anything already on screen is newer than the archive's newest
+    // page, so loading it would only produce duplicates.
+    if ((state.lines[id] ?? []).length > 0) return;
+    if (state.history[id]?.loading) return;
+
+    await fetchPage(id, null);
+  },
+
+  loadOlder: async (id) => {
+    const state = get();
+    if (state.history[id]?.loading || state.history[id]?.exhausted) return;
+
+    const oldest = state.lines[id]?.[0];
+    if (!oldest) {
+      // Nothing on screen at all: the newest page *is* the right answer.
+      await fetchPage(id, null);
+      return;
+    }
+
+    // The cursor is built from the line the user can see, not from a row id. A
+    // line that arrived live has no row yet — its insert is still in flight — and
+    // waiting for one would mean "scroll up" does nothing until the write lands.
+    // Paging by time alone asks for everything strictly before that second, which
+    // is exactly what is missing. The cost is that lines sharing the oldest
+    // second can be missed, and no cursor can avoid that: the row ids that would
+    // break the tie are precisely the ones not known yet.
+    await fetchPage(id, { at: oldest.timestamp, id: oldest.historyId ?? '0' });
+  },
 }));
+
+/**
+ * One page of history, prepended to a buffer.
+ *
+ * Prepending is why the backend hands pages back oldest-first: no reversing, and
+ * no chance of getting the order wrong in one of the two callers.
+ */
+async function fetchPage(id: string, before: HistoryCursor | null): Promise<void> {
+  const { networkId, target } = parseBufferId(id);
+  const store = useSessionStore;
+
+  const mark = (patch: Partial<HistoryState>) =>
+    store.setState((state) => {
+      const current = state.history[id] ?? { loading: false, exhausted: false, error: null };
+      return { history: { ...state.history, [id]: { ...current, ...patch } } };
+    });
+
+  mark({ loading: true, error: null });
+
+  let page: HistoryPage;
+  try {
+    page = await loadHistoryPage(networkId, target, before, HISTORY_PAGE_SIZE);
+  } catch (error) {
+    // A failed page is not worth an alert: the conversation above is untouched,
+    // and scrolling up again retries.
+    mark({ loading: false, error: String(error) });
+    return;
+  }
+
+  store.setState((state) => {
+    const existing = state.lines[id] ?? [];
+    const seen = new Set(existing.map(lineKey));
+    const network = state.networks.find((candidate) => candidate.id === networkId);
+    const selfNick = network?.nick ?? null;
+    const rules = useNotificationsStore.getState().rules;
+
+    const loaded: SessionLine[] = [];
+    for (const message of page.messages) {
+      // The archive's newest page can overlap what arrived live between the two
+      // calls, and the same line must not appear twice.
+      const candidate: SessionLine = {
+        id: nextId('line'),
+        nick: message.nick,
+        kind: message.kind,
+        text: message.body,
+        // History stores text, not styled runs; a body with no codes is exactly
+        // one unstyled run.
+        segments: [{ text: message.body, style: PLAIN_STYLE }],
+        timestamp: message.at,
+        isSelf: message.is_self,
+        highlight: !message.is_self && isHighlight(message.body, selfNick, rules),
+        historyId: message.id,
+      };
+
+      const key = lineKey(candidate);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      loaded.push(candidate);
+    }
+
+    return {
+      lines: { ...state.lines, [id]: [...loaded, ...existing] },
+      history: {
+        ...state.history,
+        [id]: { loading: false, exhausted: page.exhausted, error: null },
+      },
+    };
+  });
+}
+
+/**
+ * Identity of a line for de-duplication across the archive and the live stream.
+ *
+ * Content, not the row id: a line that arrived live has no row id yet, and the
+ * whole point is to recognise it again when the same line comes back from the
+ * database. Nick, kind, second and text together are specific enough — two
+ * different lines agreeing on all four would be the same line by any measure a
+ * user has.
+ */
+function lineKey(line: SessionLine): string {
+  return `${line.nick}\u0000${line.kind}\u0000${line.timestamp}\u0000${line.text}`;
+}
 
 /** Fold a nickname for comparison.
  *

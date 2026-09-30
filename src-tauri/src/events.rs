@@ -166,8 +166,16 @@ pub struct IncomingMessage {
     /// Sender's display name; empty for server-generated lines.
     pub nick: String,
     pub kind: MessageKind,
-    /// Channel or user this line belongs to.
+    /// Channel or user the line names, exactly as the protocol addressed it.
     pub target: String,
+    /// The conversation buffer this line belongs to.
+    ///
+    /// Not always `target`: a private message is addressed to *us*, while the
+    /// conversation belongs to the sender. The backend resolves it (see
+    /// `ircuit_state::view::ViewMessage::buffer`) because history is keyed by it
+    /// — a UI that derived it differently would file lines under a key nothing
+    /// reads and show an empty conversation, with no error anywhere.
+    pub buffer: String,
     /// The line with formatting codes removed, for search and notifications.
     pub text: String,
     /// The same line with formatting preserved. Always at least one run.
@@ -245,6 +253,52 @@ impl RawTraffic {
             seq,
         }
     }
+}
+
+/// One line of stored history on its way to the UI.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct HistoryMessage {
+    /// The database rowid, as text.
+    ///
+    /// A rowid does not fit the IPC integer rule (docs §7). It is an opaque
+    /// handle to the UI — only ever handed back as a cursor, never arithmetic.
+    pub id: String,
+    pub network_id: String,
+    /// The conversation buffer this line belongs to.
+    pub buffer: String,
+    pub nick: String,
+    pub kind: MessageKind,
+    /// The line with formatting codes removed.
+    ///
+    /// History stores text rather than styled runs: the codes were already
+    /// interpreted once, and an archive that has to be re-parsed to be read is
+    /// one schema change away from unreadable.
+    pub body: String,
+    /// Unix seconds.
+    pub at: u32,
+    pub is_self: bool,
+}
+
+/// Where to continue paging backwards from.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct HistoryCursor {
+    pub at: u32,
+    /// Rowid as text; see [`HistoryMessage::id`].
+    pub id: String,
+}
+
+/// One page of history, oldest line first.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct HistoryPage {
+    /// Oldest first — the order the UI draws them in, so a page can be prepended
+    /// without reversing anything at the call site.
+    pub messages: Vec<HistoryMessage>,
+    /// Whether this page reached the beginning of the buffer.
+    ///
+    /// Decided by the backend with one extra row, rather than by the UI guessing
+    /// from a short page — a full page that happens to be the last one is
+    /// otherwise indistinguishable from one that is not.
+    pub exhausted: bool,
 }
 
 /// Recently emitted events for one network, for a UI that subscribed late.

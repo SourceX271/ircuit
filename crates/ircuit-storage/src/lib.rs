@@ -24,6 +24,13 @@ pub use error::{Result, StorageError};
 pub use messages::{Cursor, Inserted, MessageKind, NewMessage, SearchHit, StoredMessage};
 pub use schema::{migrate, open, open_in_memory, schema_version};
 
+/// The SQLite driver, re-exported.
+///
+/// Callers that hold a connection (`ircuit`) must name `rusqlite` types, and
+/// re-exporting it here is what keeps them on the same version as this crate
+/// rather than on whatever a second `Cargo.toml` happens to resolve to.
+pub use rusqlite;
+
 /// The schema version this build expects.
 ///
 /// Kept as a constant so callers can compare it against a stored value without

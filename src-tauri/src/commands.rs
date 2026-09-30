@@ -12,7 +12,8 @@ use tauri::{AppHandle, State};
 
 use ircuit_client::ClientCommand;
 
-use crate::events::{ChannelSnapshot, NetworkBacklog};
+use crate::events::{ChannelSnapshot, HistoryCursor, HistoryPage, NetworkBacklog};
+use crate::history::HistoryStore;
 use crate::net::{NetworkManager, NetworkRequest, NetworkSummary};
 
 /// Application and runtime information.
@@ -134,6 +135,58 @@ pub async fn get_network_backlog(
         .backlog(&network_id)
         .await
         .ok_or_else(|| format!("no such network: {network_id}"))
+}
+
+/// One page of a buffer's stored history, oldest line first.
+///
+/// Pass the cursor of the oldest line already on screen to walk further back.
+/// Omitting it returns the newest page, which is what opening a buffer wants.
+#[tauri::command]
+#[specta::specta]
+pub async fn load_history(
+    history: State<'_, Arc<HistoryStore>>,
+    network_id: String,
+    buffer: String,
+    before: Option<HistoryCursor>,
+    limit: Option<u32>,
+) -> Result<HistoryPage, String> {
+    // Clamped rather than rejected: a page size is a UI hint, and a silly one
+    // should not turn into an error the user sees.
+    let limit = limit.unwrap_or(100).clamp(1, 500);
+
+    history
+        .inner()
+        .page(network_id, buffer, before, limit)
+        .await
+}
+
+/// How many lines a buffer holds.
+#[tauri::command]
+#[specta::specta]
+pub async fn count_history(
+    history: State<'_, Arc<HistoryStore>>,
+    network_id: String,
+    buffer: String,
+) -> Result<u32, String> {
+    history.inner().count(network_id, buffer).await
+}
+
+/// Forget one buffer's history.
+#[tauri::command]
+#[specta::specta]
+pub async fn clear_history(
+    history: State<'_, Arc<HistoryStore>>,
+    network_id: String,
+    buffer: Option<String>,
+) -> Result<u32, String> {
+    let store = history.inner();
+
+    match buffer {
+        // An empty buffer name means the server buffer, not "every buffer" —
+        // omitting the argument is how a caller asks for the whole network.
+        Some(buffer) => store.delete_buffer(network_id, buffer).await,
+        None => store.delete_network(network_id).await,
+    }
 }
 
 /// The current state of every channel on a network.

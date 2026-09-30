@@ -118,6 +118,12 @@ export const zhCN = {
     modes: '频道模式',
   },
 
+  history: {
+    loading: '正在载入更早的消息…',
+    failed: '载入历史失败，向上滚动可重试',
+    start: '已到最早的记录',
+  },
+
   members: {
     title: '成员',
     count: '{{count}} 人',
